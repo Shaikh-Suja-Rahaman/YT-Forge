@@ -13,8 +13,8 @@
   },
   "keywords": [],
   "author": {
-    "name": "Piko",
-    "email": "pikocanfly@gmail.com"
+    "name": "Suja",
+    "email": "sujarahaman.dms.727@gmail.com"
   },
   "license": "MIT",
   "devDependencies": {
@@ -31,8 +31,10 @@
     "vite": "^5.4.19"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@vitejs/plugin-react": "^4.5.2",
     "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^10.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   }

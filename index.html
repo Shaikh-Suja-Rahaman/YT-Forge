@@ -1,12 +1,267 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Hello World!</title>
-
-  </head>
-  <body>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://i.ytimg.com;">
+    <title>YouTube Downloader</title>
+    <style>
+        :root {
+            --bg-main: #343A40; --bg-secondary: #495057; --bg-tertiary: #6C757D;
+            --text-primary: #F8F9FA; --text-secondary: #E9ECEF; --accent: #00A6FB;
+            --accent-hover: #0081C2; --success: #28a745; --error: #dc3545;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0; background-color: var(--bg-main); color: var(--text-primary);
+            font-size: 14px; -webkit-font-smoothing: antialiased;
+        }
+        #root { padding: 1.5rem; }
+        .app-container { display: flex; flex-direction: column; gap: 1.5rem; }
+        .header { display: flex; gap: 1rem; align-items: center; }
+        .url-input, .details-select {
+            flex-grow: 1; background-color: var(--bg-secondary); border: 1px solid var(--bg-tertiary);
+            border-radius: 8px; color: var(--text-primary); padding: 0.75rem 1rem;
+            font-size: 1rem; outline: none; transition: border-color 0.2s;
+        }
+        .url-input:focus, .details-select:focus { border-color: var(--accent); }
+        .header-button {
+            background-color: var(--accent); color: var(--text-primary); border: none;
+            border-radius: 8px; padding: 0.75rem 1rem; font-weight: bold; cursor: pointer;
+            transition: background-color 0.2s; white-space: nowrap;
+        }
+        .header-button:hover:not(:disabled) { background-color: var(--accent-hover); }
+        .header-button:disabled { background-color: var(--bg-tertiary); cursor: not-allowed; opacity: 0.7; }
+        .content-box { background-color: var(--bg-secondary); border-radius: 12px; padding: 1.5rem; min-height: 400px; }
+        .view-title {
+            font-size: 1.75rem; font-weight: bold; color: var(--text-secondary); margin: 0 0 1.5rem 0;
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        .details-view { display: flex; flex-direction: column; gap: 1.5rem; }
+        .details-top { display: flex; gap: 1.5rem; align-items: flex-start; }
+        .thumbnail { width: 180px; height: 101px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background-color: var(--bg-main); }
+        .info-text { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+        .video-title { font-size: 1.25rem; font-weight: bold; margin: 0; line-height: 1.2; }
+        .video-description {
+            font-size: 0.875rem; color: var(--text-secondary); max-height: 70px;
+            overflow: hidden; text-overflow: ellipsis; white-space: pre-wrap;
+        }
+        .details-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .details-buttons { display: flex; flex-direction: column; gap: 0.75rem; }
+        .history-view { display: flex; flex-direction: column; }
+        .history-header { display: flex; justify-content: space-between; align-items: baseline; }
+        .clear-history-button { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 0.8rem; }
+        .history-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; }
+        .history-item {
+            display: flex; align-items: center; gap: 1rem; background-color: var(--bg-tertiary);
+            padding: 0.75rem; border-radius: 8px;
+        }
+        .history-info { flex-grow: 1; min-width: 0; }
+        .history-title { font-weight: bold; margin: 0 0 0.25rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-format { font-size: 0.8rem; color: var(--text-secondary); }
+        .history-buttons { display: flex; gap: 0.5rem; }
+        .history-button { background-color: var(--bg-secondary); padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+        .status { margin-top: 1rem; }
+        .message.success { color: var(--success); } .message.error { color: var(--error); }
+        .progress-bar-container { width: 100%; background-color: var(--bg-tertiary); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+        .progress-bar { width: 0; height: 8px; background-color: var(--accent); transition: width 0.2s ease; border-radius: 4px; }
+    </style>
+</head>
+<body>
     <div id="root"></div>
-    <script type="module" src="/src/renderer.jsx"></script>
-  </body>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        function App() {
+            const [url, setUrl] = useState("");
+            const [videoDetails, setVideoDetails] = useState(null);
+            const [history, setHistory] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [message, setMessage] = useState("");
+
+            useEffect(() => {
+                const fetchHistory = async () => setHistory(await window.electronAPI.getHistory());
+                fetchHistory();
+            }, []);
+
+            const handleUrlChange = (newUrl) => {
+                setUrl(newUrl);
+                if (!newUrl.trim()) setVideoDetails(null);
+            };
+
+            const handleFetchDetails = useCallback(async () => {
+                if (!url) return;
+                setIsLoading(true);
+                setMessage("Fetching details...");
+                const result = await window.electronAPI.getVideoInfo(url);
+                if (result.success) {
+                    setVideoDetails(result);
+                    setMessage("");
+                } else {
+                    setMessage(`Error: ${result.error}`);
+                    setVideoDetails(null);
+                }
+                setIsLoading(false);
+            }, [url]);
+
+            const goBackToHistory = () => {
+                setUrl("");
+                setVideoDetails(null);
+            };
+
+            return (
+                <div className="app-container">
+                    <Header
+                        url={url}
+                        onUrlChange={handleUrlChange}
+                        onFetch={handleFetchDetails}
+                        isLoading={isLoading}
+                    />
+                    <main className="content-box">
+                        {videoDetails ? (
+                            <DetailsView
+                                details={videoDetails}
+                                url={url}
+                                onBack={goBackToHistory}
+                                onDownloadComplete={async () => setHistory(await window.electronAPI.getHistory())}
+                            />
+                        ) : (
+                            <HistoryView history={history} setHistory={setHistory} />
+                        )}
+                        {isLoading && <p>{message}</p>}
+                    </main>
+                </div>
+            );
+        }
+
+        const Header = ({ url, onUrlChange, onFetch, isLoading }) => (
+            <header className="header">
+                <input
+                    type="text" className="url-input" placeholder="Paste Video URL here"
+                    value={url} onChange={(e) => onUrlChange(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && onFetch()}
+                />
+                <button className="header-button" onClick={onFetch} disabled={!url || isLoading}>
+                    {isLoading ? "..." : "FETCH"}
+                </button>
+            </header>
+        );
+
+        const HistoryView = ({ history, setHistory }) => {
+            const handleClearHistory = async () => {
+                await window.electronAPI.clearHistory();
+                setHistory([]);
+            };
+            return (
+            <div className="history-view">
+                <div className="history-header">
+                    <h2 className="view-title">HISTORY</h2>
+                    {history.length > 0 && <button onClick={handleClearHistory} className="clear-history-button">Clear All</button>}
+                </div>
+                <div className="history-list">
+                    {history.length > 0 ? history.map(item => (
+                        <div key={item.timestamp} className="history-item">
+                            <img src={item.thumbnailUrl} className="thumbnail" />
+                            <div className="history-info">
+                                <p className="history-title">{item.title}</p>
+                                <p className="history-format">{item.format}</p>
+                            </div>
+                            <button className="header-button history-button" onClick={() => window.electronAPI.openFileLocation(item.path)}>
+                                View
+                            </button>
+                        </div>
+                    )) : <p>Your download history will appear here.</p>}
+                </div>
+            </div>
+        )};
+
+        const DetailsView = ({ details, url, onBack, onDownloadComplete }) => {
+            const [selectedQuality, setSelectedQuality] = useState(details.formats[0]?.itag || "");
+            const [selectedType, setSelectedType] = useState("mp4");
+            const [isDownloading, setIsDownloading] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [message, setMessage] = useState({ text: "", type: "info" });
+
+            useEffect(() => {
+                const listener = ({ percent }) => setProgress(percent);
+                window.electronAPI.onDownloadProgress(listener);
+                // Optional: Cleanup listener if component unmounts
+                // return () => ipcRenderer.removeListener('download-progress', listener);
+            }, []);
+
+            const handleDownload = async () => {
+                setIsDownloading(true);
+                setProgress(0);
+                setMessage({ text: 'Initializing download...', type: 'info' });
+                const qualityLabel = details.formats.find(f => f.itag == selectedQuality)?.quality;
+                const options = { ...details, url, quality: selectedQuality, qualityLabel, type: selectedType };
+                const result = await window.electronAPI.downloadVideo(options);
+                if (result.success) {
+                    setMessage({ text: `Success! Saved to ${result.path}`, type: 'success' });
+                    onDownloadComplete();
+                } else {
+                    setMessage({ text: `Error: ${result.error}`, type: 'error' });
+                }
+                setIsDownloading(false);
+            };
+
+            const handleThumbnailDownload = async () => {
+                setMessage({ text: 'Saving thumbnail...', type: 'info' });
+                const result = await window.electronAPI.downloadThumbnail({ url: details.thumbnailUrl, title: details.title });
+                if (result.success) {
+                    setMessage({ text: `Thumbnail saved!`, type: 'success' });
+                } else {
+                    setMessage({ text: `Error: ${result.error}`, type: 'error' });
+                }
+            };
+
+            return (
+                <div className="details-view">
+                    <h2 className="view-title" onClick={onBack} style={{ cursor: 'pointer' }}>
+                        &larr; BACK TO HISTORY
+                    </h2>
+                    <div className="details-top">
+                        <img src={details.thumbnailUrl} className="thumbnail"/>
+                        <div className="info-text">
+                            <h3 className="video-title">{details.title}</h3>
+                            <p className="video-description">{details.description}</p>
+                        </div>
+                    </div>
+                    <div className="details-controls">
+                        <select className="details-select" value={selectedType} onChange={e => setSelectedType(e.target.value)} disabled={isDownloading}>
+                            <option value="mp4">MP4 (Video)</option>
+                            <option value="mp3">MP3 (Audio)</option>
+                        </select>
+                        <select className="details-select" value={selectedQuality} onChange={e => setSelectedQuality(e.target.value)} disabled={isDownloading || selectedType === 'mp3'}>
+                            {details.formats.map(f => <option key={f.itag} value={f.itag}>{f.quality}</option>)}
+                        </select>
+                    </div>
+                    <div className="details-buttons">
+                        <button className="header-button" onClick={handleDownload} disabled={isDownloading}>
+                            {isDownloading ? `Downloading... ${Math.floor(progress)}%` : 'Download Video / Audio'}
+                        </button>
+                        <button className="header-button history-button" onClick={handleThumbnailDownload} disabled={isDownloading}>
+                            Download Thumbnail
+                        </button>
+                    </div>
+                    <div className="status">
+                        {isDownloading && (
+                            <div className="progress-bar-container">
+                                <div className="progress-bar" style={{ width: `${progress}%` }}></div>
+                            </div>
+                        )}
+                        <p className={`message ${message.type}`}>{message.text}</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
 </html>
