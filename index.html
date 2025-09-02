@@ -5,68 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://i.ytimg.com;">
     <title>YouTube Downloader</title>
+    <link rel="stylesheet" href="./src/style.css" />
     <style>
-        :root {
-            --bg-main: #343A40; --bg-secondary: #495057; --bg-tertiary: #6C757D;
-            --text-primary: #F8F9FA; --text-secondary: #E9ECEF; --accent: #00A6FB;
-            --accent-hover: #0081C2; --success: #28a745; --error: #dc3545;
-        }
-        *, *::before, *::after { box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0; background-color: var(--bg-main); color: var(--text-primary);
-            font-size: 14px; -webkit-font-smoothing: antialiased;
-        }
-        #root { padding: 1.5rem; }
-        .app-container { display: flex; flex-direction: column; gap: 1.5rem; }
-        .header { display: flex; gap: 1rem; align-items: center; }
-        .url-input, .details-select {
-            flex-grow: 1; background-color: var(--bg-secondary); border: 1px solid var(--bg-tertiary);
-            border-radius: 8px; color: var(--text-primary); padding: 0.75rem 1rem;
-            font-size: 1rem; outline: none; transition: border-color 0.2s;
-        }
-        .url-input:focus, .details-select:focus { border-color: var(--accent); }
-        .header-button {
-            background-color: var(--accent); color: var(--text-primary); border: none;
-            border-radius: 8px; padding: 0.75rem 1rem; font-weight: bold; cursor: pointer;
-            transition: background-color 0.2s; white-space: nowrap;
-        }
-        .header-button:hover:not(:disabled) { background-color: var(--accent-hover); }
-        .header-button:disabled { background-color: var(--bg-tertiary); cursor: not-allowed; opacity: 0.7; }
-        .content-box { background-color: var(--bg-secondary); border-radius: 12px; padding: 1.5rem; min-height: 400px; }
-        .view-title {
-            font-size: 1.75rem; font-weight: bold; color: var(--text-secondary); margin: 0 0 1.5rem 0;
-            display: flex; align-items: center; gap: 0.75rem;
-        }
-        .details-view { display: flex; flex-direction: column; gap: 1.5rem; }
-        .details-top { display: flex; gap: 1.5rem; align-items: flex-start; }
-        .thumbnail { width: 180px; height: 101px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background-color: var(--bg-main); }
-        .info-text { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
-        .video-title { font-size: 1.25rem; font-weight: bold; margin: 0; line-height: 1.2; }
-        .video-description {
-            font-size: 0.875rem; color: var(--text-secondary); max-height: 70px;
-            overflow: hidden; text-overflow: ellipsis; white-space: pre-wrap;
-        }
-        .details-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        .details-buttons { display: flex; flex-direction: column; gap: 0.75rem; }
-        .history-view { display: flex; flex-direction: column; }
-        .history-header { display: flex; justify-content: space-between; align-items: baseline; }
-        .clear-history-button { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 0.8rem; }
-        .history-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; }
-        .history-item {
-            display: flex; align-items: center; gap: 1rem; background-color: var(--bg-tertiary);
-            padding: 0.75rem; border-radius: 8px;
-        }
-        .history-info { flex-grow: 1; min-width: 0; }
-        .history-title { font-weight: bold; margin: 0 0 0.25rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .history-format { font-size: 0.8rem; color: var(--text-secondary); }
-        .history-buttons { display: flex; gap: 0.5rem; }
-        .history-button { background-color: var(--bg-secondary); padding: 0.5rem 0.75rem; font-size: 0.8rem; }
-        .status { margin-top: 1rem; }
-        .message.success { color: var(--success); } .message.error { color: var(--error); }
-        .progress-bar-container { width: 100%; background-color: var(--bg-tertiary); border-radius: 4px; margin-top: 8px; overflow: hidden; }
-        .progress-bar { width: 0; height: 8px; background-color: var(--accent); transition: width 0.2s ease; border-radius: 4px; }
-    </style>
+        </style>
 </head>
 <body>
     <div id="root"></div>
@@ -146,7 +87,7 @@
                     onKeyDown={(e) => e.key === 'Enter' && onFetch()}
                 />
                 <button className="header-button" onClick={onFetch} disabled={!url || isLoading}>
-                    {isLoading ? "..." : "FETCH"}
+                    {isLoading ? "..." : "DOWNLOAD"}
                 </button>
             </header>
         );

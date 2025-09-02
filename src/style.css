@@ -1,0 +1,516 @@
+/* --- CSS Variables --- */
+:root {
+    --bg-main: #0D1117;
+    --bg-content: #161B22;
+    --bg-content-light: #21262D;
+    --border-color: #30363D;
+    --accent-blue: #4A90E2;
+    --accent-blue-hover: #357ABD;
+    --text-light: #F0F6FC;
+    --text-secondary: #8B949E;
+    --text-dark: #E6EDF3;
+    --text-placeholder: #6E7681;
+}
+
+/* --- Global Reset & Base Styles --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-light);
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Main App Container --- */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 100%;
+    max-height: 560px; /* 600px - 40px padding */
+}
+
+/* --- Header Section --- */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.url-input {
+    flex: 1;
+    background-color: var(--bg-content-light);
+    border: 1px solid var(--border-color);
+    border-radius: 25px;
+    padding: 14px 24px;
+    font-size: 16px;
+    color: var(--text-light);
+    outline: none;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.url-input::placeholder {
+    color: var(--text-placeholder);
+}
+
+.url-input:focus {
+    border-color: var(--accent-blue);
+    background-color: var(--bg-content);
+}
+
+.header-button {
+    background-color: var(--accent-blue);
+    color: var(--text-light);
+    border: none;
+    border-radius: 25px;
+    padding: 14px 28px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+    min-width: 200px;
+}
+
+.header-button:hover:not(:disabled) {
+    background-color: var(--accent-blue-hover);
+}
+
+.header-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background-color: var(--bg-content-light);
+}
+
+/* --- Content Box --- */
+.content-box {
+    background-color: var(--bg-content);
+    border-radius: 25px;
+    padding: 24px;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* --- History View --- */
+.history-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.view-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.clear-history-button {
+    background: none;
+    border: none;
+    color: var(--accent-blue);
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: underline;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+}
+
+.clear-history-button:hover {
+    opacity: 1;
+}
+
+.history-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-right: 8px;
+}
+
+/* Custom Scrollbar */
+.history-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.history-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+    background: var(--text-placeholder);
+}
+
+.history-item {
+    background-color: var(--bg-content-light);
+    border-radius: 20px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 80px;
+}
+
+.thumbnail, .history-thumbnail {
+    width: 80px;
+    height: 45px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background-color: var(--text-dark);
+}
+
+.history-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.history-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-light);
+    margin: 0 0 4px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-format {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.history-button {
+    background-color: var(--accent-blue);
+    color: var(--text-light);
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+}
+
+.history-button:hover {
+    background-color: var(--accent-blue-hover);
+}
+
+/* Empty history state */
+.history-list p {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 16px;
+    margin-top: 40px;
+}
+
+/* --- Details View --- */
+.details-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 16px;
+}
+
+.details-view .view-title {
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+    margin-bottom: 8px;
+}
+
+.details-view .view-title:hover {
+    opacity: 0.8;
+}
+
+.details-content {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+}
+
+.details-thumbnail-container {
+    grid-row: 1 / 4;
+}
+
+.details-view .thumbnail {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+    max-height: 112px;
+    border-radius: 12px;
+}
+
+.info-text {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+}
+
+.details-controls {
+    grid-column: 2;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.details-buttons {
+    grid-column: 2;
+    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-self: start;
+}
+
+.status {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    margin-top: 8px;
+}
+
+.info-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.video-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin: 0 0 8px 0;
+    line-height: 1.3;
+}
+
+.video-description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+    max-height: 45px;
+    overflow-y: auto;
+    line-height: 1.4;
+    padding-right: 8px;
+}
+
+.video-description::-webkit-scrollbar {
+    width: 4px;
+}
+
+.video-description::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.video-description::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+.details-select {
+    background-color: var(--bg-content-light);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-light);
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%228%22%3E%3Cpath%20fill%3D%22%23F0F6FC%22%20d%3D%22M6%208L0%202h12z%22/%3E%3C/svg%3E');
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 12px 8px;
+    padding-right: 36px;
+}
+
+.details-select:focus {
+    border-color: var(--accent-blue);
+}
+
+.details-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.details-buttons .header-button {
+    padding: 10px 18px;
+    font-size: 13px;
+    border-radius: 20px;
+}
+
+.details-buttons .history-button {
+    background-color: var(--bg-content-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-color);
+}
+
+.details-buttons .history-button:hover:not(:disabled) {
+    background-color: var(--border-color);
+    border-color: var(--accent-blue);
+}
+
+/* --- Status and Progress --- */
+.status {
+    margin-top: 16px;
+}
+
+.message {
+    font-size: 14px;
+    margin: 8px 0 0 0;
+}
+
+.message.success {
+    color: #10B981;
+}
+
+.message.error {
+    color: #EF4444;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 8px;
+    background-color: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.progress-bar {
+    height: 100%;
+    background-color: var(--accent-blue);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+/* Need to add the HTML structure change for details view */
+/* The React component should use this new structure: */
+/*
+<div className="details-view">
+    <h2 className="view-title" onClick={onBack} style={{ cursor: 'pointer' }}>
+        &larr; BACK TO HISTORY
+    </h2>
+    <div className="details-content">
+        <div className="details-thumbnail-container">
+            <img src={details.thumbnailUrl} className="thumbnail"/>
+        </div>
+        <div className="info-text">
+            <h3 className="video-title">{details.title}</h3>
+            <p className="video-description">{details.description}</p>
+        </div>
+        <div className="details-controls">
+            <select className="details-select" value={selectedType} onChange={e => setSelectedType(e.target.value)} disabled={isDownloading}>
+                <option value="mp4">MP4 (Video)</option>
+                <option value="mp3">MP3 (Audio)</option>
+            </select>
+            <select className="details-select" value={selectedQuality} onChange={e => setSelectedQuality(e.target.value)} disabled={isDownloading || selectedType === 'mp3'}>
+                {details.formats.map(f => <option key={f.itag} value={f.itag}>{f.quality}</option>)}
+            </select>
+        </div>
+        <div className="details-buttons">
+            <button className="header-button" onClick={handleDownload} disabled={isDownloading}>
+                {isDownloading ? `Downloading... ${Math.floor(progress)}%` : 'Download Video / Audio'}
+            </button>
+            <button className="header-button history-button" onClick={handleThumbnailDownload} disabled={isDownloading}>
+                Download Thumbnail
+            </button>
+        </div>
+        <div className="status">
+            {isDownloading && (
+                <div className="progress-bar-container">
+                    <div className="progress-bar" style={{ width: `${progress}%` }}></div>
+                </div>
+            )}
+            <p className={`message ${message.type}`}>{message.text}</p>
+        </div>
+    </div>
+</div>
+*/
+
+/* --- Responsive Adjustments --- */
+@media (max-height: 600px) {
+    #root {
+        padding: 16px;
+    }
+
+    .app-container {
+        gap: 16px;
+    }
+
+    .content-box {
+        padding: 20px;
+    }
+
+    .view-title {
+        font-size: 28px;
+    }
+}
+
+/* --- Loading States --- */
+.header-button:disabled {
+    position: relative;
+}
+
+
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --- Focus States --- */
+.header-button:focus,
+.history-button:focus,
+.details-select:focus,
+.url-input:focus {
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.3);
+}
+
+.clear-history-button:focus {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
