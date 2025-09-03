@@ -1,208 +1,317 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://i.ytimg.com;">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://i.ytimg.com;"
+    />
     <title>YouTube Downloader</title>
     <link rel="stylesheet" href="./src/style.css" />
-    <style>
-        </style>
-</head>
-<body>
+    <style></style>
+  </head>
+  <body>
     <div id="root"></div>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
+      const { useState, useEffect, useCallback } = React;
 
-        function App() {
-            const [url, setUrl] = useState("");
-            const [videoDetails, setVideoDetails] = useState(null);
-            const [history, setHistory] = useState([]);
-            const [isLoading, setIsLoading] = useState(false);
-            const [message, setMessage] = useState("");
+      function App() {
+        const [url, setUrl] = useState("");
+        const [videoDetails, setVideoDetails] = useState(null);
+        const [history, setHistory] = useState([]);
+        const [isLoading, setIsLoading] = useState(false);
+        const [message, setMessage] = useState("");
 
-            useEffect(() => {
-                const fetchHistory = async () => setHistory(await window.electronAPI.getHistory());
-                fetchHistory();
-            }, []);
+        useEffect(() => {
+          const fetchHistory = async () =>
+            setHistory(await window.electronAPI.getHistory());
+          fetchHistory();
+        }, []);
 
-            const handleUrlChange = (newUrl) => {
-                setUrl(newUrl);
-                if (!newUrl.trim()) setVideoDetails(null);
-            };
-
-            const handleFetchDetails = useCallback(async () => {
-                if (!url) return;
-                setIsLoading(true);
-                setMessage("Fetching details...");
-                const result = await window.electronAPI.getVideoInfo(url);
-                if (result.success) {
-                    setVideoDetails(result);
-                    setMessage("");
-                } else {
-                    setMessage(`Error: ${result.error}`);
-                    setVideoDetails(null);
-                }
-                setIsLoading(false);
-            }, [url]);
-
-            const goBackToHistory = () => {
-                setUrl("");
-                setVideoDetails(null);
-            };
-
-            return (
-                <div className="app-container">
-                    <Header
-                        url={url}
-                        onUrlChange={handleUrlChange}
-                        onFetch={handleFetchDetails}
-                        isLoading={isLoading}
-                    />
-                    <main className="content-box">
-                        {videoDetails ? (
-                            <DetailsView
-                                details={videoDetails}
-                                url={url}
-                                onBack={goBackToHistory}
-                                onDownloadComplete={async () => setHistory(await window.electronAPI.getHistory())}
-                            />
-                        ) : (
-                            <HistoryView history={history} setHistory={setHistory} />
-                        )}
-                        {isLoading && <p>{message}</p>}
-                    </main>
-                </div>
-            );
-        }
-
-        const Header = ({ url, onUrlChange, onFetch, isLoading }) => (
-            <header className="header">
-                <input
-                    type="text" className="url-input" placeholder="Paste Video URL here"
-                    value={url} onChange={(e) => onUrlChange(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && onFetch()}
-                />
-                <button className="header-button" onClick={onFetch} disabled={!url || isLoading}>
-                    {isLoading ? "..." : "DOWNLOAD"}
-                </button>
-            </header>
-        );
-
-        const HistoryView = ({ history, setHistory }) => {
-            const handleClearHistory = async () => {
-                await window.electronAPI.clearHistory();
-                setHistory([]);
-            };
-            return (
-            <div className="history-view">
-                <div className="history-header">
-                    <h2 className="view-title">HISTORY</h2>
-                    {history.length > 0 && <button onClick={handleClearHistory} className="clear-history-button">Clear All</button>}
-                </div>
-                <div className="history-list">
-                    {history.length > 0 ? history.map(item => (
-                        <div key={item.timestamp} className="history-item">
-                            <img src={item.thumbnailUrl} className="thumbnail" />
-                            <div className="history-info">
-                                <p className="history-title">{item.title}</p>
-                                <p className="history-format">{item.format}</p>
-                            </div>
-                            <button className="header-button history-button" onClick={() => window.electronAPI.openFileLocation(item.path)}>
-                                View
-                            </button>
-                        </div>
-                    )) : <p>Your download history will appear here.</p>}
-                </div>
-            </div>
-        )};
-
-        const DetailsView = ({ details, url, onBack, onDownloadComplete }) => {
-            const [selectedQuality, setSelectedQuality] = useState(details.formats[0]?.itag || "");
-            const [selectedType, setSelectedType] = useState("mp4");
-            const [isDownloading, setIsDownloading] = useState(false);
-            const [progress, setProgress] = useState(0);
-            const [message, setMessage] = useState({ text: "", type: "info" });
-
-            useEffect(() => {
-                const listener = ({ percent }) => setProgress(percent);
-                window.electronAPI.onDownloadProgress(listener);
-                // Optional: Cleanup listener if component unmounts
-                // return () => ipcRenderer.removeListener('download-progress', listener);
-            }, []);
-
-            const handleDownload = async () => {
-                setIsDownloading(true);
-                setProgress(0);
-                setMessage({ text: 'Initializing download...', type: 'info' });
-                const qualityLabel = details.formats.find(f => f.itag == selectedQuality)?.quality;
-                const options = { ...details, url, quality: selectedQuality, qualityLabel, type: selectedType };
-                const result = await window.electronAPI.downloadVideo(options);
-                if (result.success) {
-                    setMessage({ text: `Success! Saved to ${result.path}`, type: 'success' });
-                    onDownloadComplete();
-                } else {
-                    setMessage({ text: `Error: ${result.error}`, type: 'error' });
-                }
-                setIsDownloading(false);
-            };
-
-            const handleThumbnailDownload = async () => {
-                setMessage({ text: 'Saving thumbnail...', type: 'info' });
-                const result = await window.electronAPI.downloadThumbnail({ url: details.thumbnailUrl, title: details.title });
-                if (result.success) {
-                    setMessage({ text: `Thumbnail saved!`, type: 'success' });
-                } else {
-                    setMessage({ text: `Error: ${result.error}`, type: 'error' });
-                }
-            };
-
-            return (
-                <div className="details-view">
-                    <h2 className="view-title" onClick={onBack} style={{ cursor: 'pointer' }}>
-                        &larr; BACK TO HISTORY
-                    </h2>
-                    <div className="details-top">
-                        <img src={details.thumbnailUrl} className="thumbnail"/>
-                        <div className="info-text">
-                            <h3 className="video-title">{details.title}</h3>
-                            <p className="video-description">{details.description}</p>
-                        </div>
-                    </div>
-                    <div className="details-controls">
-                        <select className="details-select" value={selectedType} onChange={e => setSelectedType(e.target.value)} disabled={isDownloading}>
-                            <option value="mp4">MP4 (Video)</option>
-                            <option value="mp3">MP3 (Audio)</option>
-                        </select>
-                        <select className="details-select" value={selectedQuality} onChange={e => setSelectedQuality(e.target.value)} disabled={isDownloading || selectedType === 'mp3'}>
-                            {details.formats.map(f => <option key={f.itag} value={f.itag}>{f.quality}</option>)}
-                        </select>
-                    </div>
-                    <div className="details-buttons">
-                        <button className="header-button" onClick={handleDownload} disabled={isDownloading}>
-                            {isDownloading ? `Downloading... ${Math.floor(progress)}%` : 'Download Video / Audio'}
-                        </button>
-                        <button className="header-button history-button" onClick={handleThumbnailDownload} disabled={isDownloading}>
-                            Download Thumbnail
-                        </button>
-                    </div>
-                    <div className="status">
-                        {isDownloading && (
-                            <div className="progress-bar-container">
-                                <div className="progress-bar" style={{ width: `${progress}%` }}></div>
-                            </div>
-                        )}
-                        <p className={`message ${message.type}`}>{message.text}</p>
-                    </div>
-                </div>
-            );
+        const handleUrlChange = (newUrl) => {
+          setUrl(newUrl);
+          if (!newUrl.trim()) setVideoDetails(null);
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        const handleFetchDetails = useCallback(async () => {
+          if (!url) return;
+          setIsLoading(true);
+          setMessage("Fetching details...");
+          const result = await window.electronAPI.getVideoInfo(url);
+          if (result.success) {
+            setVideoDetails(result);
+            setMessage("");
+          } else {
+            setMessage(`Error: ${result.error}`);
+            setVideoDetails(null);
+          }
+          setIsLoading(false);
+        }, [url]);
+
+        const goBackToHistory = () => {
+          setUrl("");
+          setVideoDetails(null);
+        };
+
+        return (
+          <div className="app-container">
+            <Header
+              url={url}
+              onUrlChange={handleUrlChange}
+              onFetch={handleFetchDetails}
+              isLoading={isLoading}
+            />
+            <main className="content-box">
+              {videoDetails ? (
+                <DetailsView
+                  details={videoDetails}
+                  url={url}
+                  onBack={goBackToHistory}
+                  onDownloadComplete={async () =>
+                    setHistory(await window.electronAPI.getHistory())
+                  }
+                />
+              ) : (
+                <HistoryView history={history} setHistory={setHistory} />
+              )}
+              {isLoading && <p>{message}</p>}
+            </main>
+          </div>
+        );
+      }
+
+      const Header = ({ url, onUrlChange, onFetch, isLoading }) => (
+        <header className="header">
+          <input
+            type="text"
+            className="url-input"
+            placeholder="Paste Video URL here"
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onFetch()}
+          />
+          <button
+            className="header-button"
+            onClick={onFetch}
+            disabled={!url || isLoading}
+          >
+            {isLoading ? "..." : "DOWNLOAD"}
+          </button>
+        </header>
+      );
+
+      const HistoryView = ({ history, setHistory }) => {
+        const handleClearHistory = async () => {
+          await window.electronAPI.clearHistory();
+          setHistory([]);
+        };
+        return (
+          <div className="history-view">
+            <div className="history-header">
+              <h2 className="view-title">HISTORY</h2>
+              {history.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  className="clear-history-button"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+            <div className="history-list">
+              {history.length > 0 ? (
+                history.map((item) => (
+                  <div key={item.timestamp} className="history-item">
+                    <img
+                      src={item.thumbnailUrl}
+                      className="history-thumbnail"
+                      alt="Video thumbnail"
+                    />
+                    <div className="history-info">
+                      <p className="history-title">{item.title}</p>
+                      {/* Added for quality/format - assuming item.format now holds both */}
+                      <p className="history-quality-format">{item.format}</p>
+                      <button
+                        className="history-button"
+                        onClick={() =>
+                          window.electronAPI.openFileLocation(item.path)
+                        }
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="lucide lucide-folder-closed-icon lucide-folder-closed"
+                        >
+                          <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+                          <path d="M2 10h20" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p>Your download history will appear here.</p>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const DetailsView = ({ details, url, onBack, onDownloadComplete }) => {
+        const [selectedQuality, setSelectedQuality] = useState(
+          details.formats[0]?.itag || ""
+        );
+        const [selectedType, setSelectedType] = useState("mp4");
+        const [isDownloading, setIsDownloading] = useState(false);
+        const [progress, setProgress] = useState(0);
+        const [message, setMessage] = useState({ text: "", type: "info" });
+
+        useEffect(() => {
+          const listener = ({ percent }) => setProgress(percent);
+          window.electronAPI.onDownloadProgress(listener);
+          // Optional: Cleanup listener if component unmounts
+          // return () => ipcRenderer.removeListener('download-progress', listener);
+        }, []);
+
+        const handleDownload = async () => {
+          setIsDownloading(true);
+          setProgress(0);
+          setMessage({ text: "Initializing download...", type: "info" });
+          const qualityLabel = details.formats.find(
+            (f) => f.itag == selectedQuality
+          )?.quality;
+          const options = {
+            ...details,
+            url,
+            quality: selectedQuality,
+            qualityLabel,
+            type: selectedType,
+          };
+          const result = await window.electronAPI.downloadVideo(options);
+          if (result.success) {
+            setMessage({
+              text: `Success! Saved to ${result.path}`,
+              type: "success",
+            });
+            onDownloadComplete();
+          } else {
+            setMessage({ text: `Error: ${result.error}`, type: "error" });
+          }
+          setIsDownloading(false);
+        };
+
+        const handleThumbnailDownload = async () => {
+          setMessage({ text: "Saving thumbnail...", type: "info" });
+          const result = await window.electronAPI.downloadThumbnail({
+            url: details.thumbnailUrl,
+            title: details.title,
+          });
+          if (result.success) {
+            setMessage({ text: `Thumbnail saved!`, type: "success" });
+          } else {
+            setMessage({ text: `Error: ${result.error}`, type: "error" });
+          }
+        };
+
+        return (
+          <div className="details-view">
+
+            <div className= "leftDetails">
+
+
+            </div>
+            <div className= "rightDetails">
+
+
+            </div>
+
+
+
+            <h2
+              className="view-title"
+              onClick={onBack}
+              style={{ cursor: "pointer" }}
+            >
+              &larr; BACK TO HISTORY
+            </h2>
+            <div className="details-top">
+              <div>
+                <img src={details.thumbnailUrl} className="thumbnail" />
+              </div>
+              <div className="info-text">
+                <h3 className="video-title">{details.title}</h3>
+                <p className="video-description">{details.description}</p>
+              </div>
+            </div>
+            <div className="details-controls">
+              <select
+                className="details-select"
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                disabled={isDownloading}
+              >
+                <option value="mp4">MP4 (Video)</option>
+                <option value="mp3">MP3 (Audio)</option>
+              </select>
+              <select
+                className="details-select"
+                value={selectedQuality}
+                onChange={(e) => setSelectedQuality(e.target.value)}
+                disabled={isDownloading || selectedType === "mp3"}
+              >
+                {details.formats.map((f) => (
+                  <option key={f.itag} value={f.itag}>
+                    {f.quality}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="details-buttons">
+              <button
+                className="header-button"
+                onClick={handleDownload}
+                disabled={isDownloading}
+              >
+                {isDownloading
+                  ? `Downloading... ${Math.floor(progress)}%`
+                  : "Download Video / Audio"}
+              </button>
+              <button
+                className="header-button history-button"
+                onClick={handleThumbnailDownload}
+                disabled={isDownloading}
+              >
+                Download Thumbnail
+              </button>
+            </div>
+            <div className="status">
+              {isDownloading && (
+                <div className="progress-bar-container">
+                  <div
+                    className="progress-bar"
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              )}
+              <p className={`message ${message.type}`}>{message.text}</p>
+            </div>
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
     </script>
-</body>
+  </body>
 </html>
