@@ -48,13 +48,12 @@
         const handleFetchDetails = useCallback(async () => {
           if (!url) return;
           setIsLoading(true);
-          setMessage("Fetching details...");
+          console.log("Fetching details...");
           const result = await window.electronAPI.getVideoInfo(url);
           if (result.success) {
             setVideoDetails(result);
-            setMessage("");
           } else {
-            setMessage(`Error: ${result.error}`);
+            console.error(`Error: ${result.error}`);
             setVideoDetails(null);
           }
           setIsLoading(false);
@@ -188,7 +187,6 @@
         const [isDownloading, setIsDownloading] = useState(false);
         const [progress, setProgress] = useState(0);
         const [progressText, setProgressText] = useState("");
-        const [message, setMessage] = useState({ text: "", type: "info" });
         const [downloadedFilePath, setDownloadedFilePath] = useState(null);
 
         const estimatedSize = useMemo(() => {
@@ -201,8 +199,8 @@
 
         useEffect(() => {
           const listener = ({ percent, downloaded, total }) => {
-             setProgress(percent);
-             setProgressText(`${formatBytes(downloaded)} / ${formatBytes(total)}`);
+              setProgress(percent);
+              setProgressText(`${formatBytes(downloaded)} / ${formatBytes(total)}`);
           };
           window.electronAPI.onDownloadProgress(listener);
         }, []);
@@ -212,7 +210,7 @@
           setProgress(0);
           setProgressText("");
           setDownloadedFilePath(null);
-          setMessage({ text: "Initializing download...", type: "info" });
+          console.log("Initializing download...");
 
           const qualityLabel = details.formats.find(
             (f) => f.itag == selectedQuality
@@ -228,16 +226,13 @@
 
           const result = await window.electronAPI.downloadVideo(options);
           if (result.success) {
-            setMessage({
-              text: `Success! File saved.`,
-              type: "success",
-            });
+            console.log("Success! File saved.");
             setDownloadedFilePath(result.path);
             onDownloadComplete();
           } else {
              if (result.error !== "Download was canceled.") {
-                setMessage({ text: `Error: ${result.error}`, type: "error" });
-             }
+                console.error(`Error: ${result.error}`);
+              }
           }
           setIsDownloading(false);
         };
@@ -246,19 +241,19 @@
             window.electronAPI.cancelDownload();
             setIsDownloading(false);
             setProgress(0);
-            setMessage({text: "Download canceled by user.", type: "info"});
+            console.log("Download canceled by user.");
         };
 
         const handleThumbnailDownload = async () => {
-          setMessage({ text: "Saving thumbnail...", type: "info" });
+          console.log("Saving thumbnail...");
           const result = await window.electronAPI.downloadThumbnail({
             url: details.thumbnailUrl,
             title: details.title,
           });
           if (result.success) {
-            setMessage({ text: `Thumbnail saved!`, type: "success" });
+            console.log(`Thumbnail saved!`);
           } else {
-            setMessage({ text: `Error: ${result.error}`, type: "error" });
+            console.error(`Error: ${result.error}`);
           }
         };
 
@@ -273,85 +268,85 @@
             <div className="details-layout-container">
               {/* --- Left Column --- */}
               <div className="details-left-column">
-                <img
-                  src={details.thumbnailUrl}
-                  className="thumbnail"
-                  alt="Video Thumbnail"
-                />
 
-                <button
-                  className="header-button show-in-folder-button"
-                  onClick={handleThumbnailDownload}
-                  disabled={isDownloading}
-                >
-                  Download Thumbnail
-                </button>
+                {/* --- Top Group --- */}
+                <div className="details-top-content">
+                  <img
+                    src={details.thumbnailUrl}
+                    className="thumbnail"
+                    alt="Video Thumbnail"
+                  />
 
-                <div className="details-controls">
-                  <select
-                    className="details-select"
-                    value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value)}
+                  <button
+                    className="header-button show-in-folder-button"
+                    onClick={handleThumbnailDownload}
                     disabled={isDownloading}
                   >
-                    <option value="mp4">MP4 (Video)</option>
-                    <option value="mp3">MP3 (Audio)</option>
-                  </select>
-                  <select
-                    className="details-select"
-                    value={selectedQuality}
-                    onChange={(e) => setSelectedQuality(e.target.value)}
-                    disabled={isDownloading || selectedType === "mp3"}
-                  >
-                    {details.formats.map((f) => (
-                      <option key={f.itag} value={f.itag}>
-                        {f.quality}
-                      </option>
-                    ))}
-                  </select>
-                   <span className="details-size">{estimatedSize}</span>
-                </div>
+                    Download Thumbnail
+                  </button>
 
-                <div className="download-actions">
-                    <button
-                        className="header-button"
-                        onClick={handleDownload}
-                        disabled={isDownloading}
+                  <div className="details-controls">
+                    <select
+                      className="details-select"
+                      value={selectedType}
+                      onChange={(e) => setSelectedType(e.target.value)}
+                      disabled={isDownloading}
                     >
-                        {isDownloading ? `Downloading...` : "Download"}
-                    </button>
-                    {isDownloading && (
-                         <button
-                            className="header-button cancel-button"
-                            onClick={handleCancelDownload}
-                        >
-                            Cancel
-                        </button>
+                      <option value="mp4">MP4 (Video)</option>
+                      <option value="mp3">MP3 (Audio)</option>
+                    </select>
+                    <select
+                      className="details-select"
+                      value={selectedQuality}
+                      onChange={(e) => setSelectedQuality(e.target.value)}
+                      disabled={isDownloading || selectedType === "mp3"}
+                    >
+                      {details.formats.map((f) => (
+                        <option key={f.itag} value={f.itag}>
+                          {f.quality}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="download-actions">
+                    {isDownloading ? (
+                        <>
+                            <button className="header-button" disabled>Downloading...</button>
+                            <button className="header-button cancel-button" onClick={handleCancelDownload}>Cancel</button>
+                        </>
+                    ) : (
+                        <div className="download-composite-button">
+                            <button className="download-main-button" onClick={handleDownload}>
+                                Download
+                            </button>
+                            <span className="download-size-indicator">{estimatedSize}</span>
+                        </div>
                     )}
+                  </div>
                 </div>
 
-
-                <div className="status">
+                {/* --- Bottom Status Area --- */}
+                <div className="status-area">
                   {isDownloading && (
                     <div className="progress-container">
+                      <p className="progress-text">{progressText}</p>
                       <div className="progress-bar-container">
                         <div
                           className="progress-bar"
                           style={{ width: `${progress}%` }}
                         ></div>
                       </div>
-                       <p className="progress-text">{progressText}</p>
+
                     </div>
                   )}
-                  <div className={`message ${message.type}`}>
-                    <span>{message.text}</span>
-                    {message.type === 'success' && downloadedFilePath && (
-                        <button className="history-button" onClick={() => window.electronAPI.openFileLocation(downloadedFilePath)}>
-                            Show in Folder
-                        </button>
-                    )}
-                  </div>
+                  {!isDownloading && downloadedFilePath && (
+                    <button className="header-button show-in-folder-button" onClick={() => window.electronAPI.openFileLocation(downloadedFilePath)}>
+                        Show in Folder
+                    </button>
+                  )}
                 </div>
+
               </div>
 
               {/* --- Right Column --- */}

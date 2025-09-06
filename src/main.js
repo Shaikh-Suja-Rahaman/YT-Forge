@@ -17,7 +17,7 @@ let currentDownloadPath;
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
-    height: 600,
+    height: 700,
     resizable: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
