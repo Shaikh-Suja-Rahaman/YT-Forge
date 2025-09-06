@@ -140,6 +140,13 @@ body {
 }
 
 .view-title {
+  background: none; /* Removes background color */
+  border: none; /* Removes border */
+  padding: 0; /* Removes padding */
+  font: inherit; /* Inherits font styles from parent */
+  cursor: pointer; /* Ensures cursor remains a pointer */
+  outline: none; /* Removes outline on focus (consider accessibility) */
+  appearance: none;
   font-size: 32px;
   font-weight: 700;
   color: var(--text-light);

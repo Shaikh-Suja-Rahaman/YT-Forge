@@ -32,6 +32,7 @@
         const [videoDetails, setVideoDetails] = useState(null);
         const [history, setHistory] = useState([]);
         const [isLoading, setIsLoading] = useState(false);
+        const [isDownloading, setIsDownloading] = useState(false); // State lifted up
         const [message, setMessage] = useState("");
 
         useEffect(() => {
@@ -46,7 +47,7 @@
         };
 
         const handleFetchDetails = useCallback(async () => {
-          if (!url) return;
+          if (!url || isDownloading) return; // Prevent fetch during download
           setIsLoading(true);
           console.log("Fetching details...");
           const result = await window.electronAPI.getVideoInfo(url);
@@ -57,7 +58,7 @@
             setVideoDetails(null);
           }
           setIsLoading(false);
-        }, [url]);
+        }, [url, isDownloading]); // Add isDownloading to dependency array
 
         const goBackToHistory = () => {
           setUrl("");
@@ -71,6 +72,7 @@
               onUrlChange={handleUrlChange}
               onFetch={handleFetchDetails}
               isLoading={isLoading}
+              isDownloading={isDownloading} // Pass isDownloading state
             />
             <main className="content-box">
               {isLoading ? (
@@ -83,6 +85,8 @@
                   details={videoDetails}
                   url={url}
                   onBack={goBackToHistory}
+                  isDownloading={isDownloading} // Pass state and setter
+                  setIsDownloading={setIsDownloading}
                   onDownloadComplete={async () =>
                     setHistory(await window.electronAPI.getHistory())
                   }
@@ -96,7 +100,7 @@
         );
       }
 
-      const Header = ({ url, onUrlChange, onFetch, isLoading }) => (
+      const Header = ({ url, onUrlChange, onFetch, isLoading, isDownloading }) => ( // Accept isDownloading
         <header className="header">
           <input
             type="text"
@@ -105,11 +109,12 @@
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onFetch()}
+            disabled={isDownloading} // Disable input during download
           />
           <button
             className="header-button"
             onClick={onFetch}
-            disabled={!url || isLoading}
+            disabled={!url || isLoading || isDownloading} // Disable button during download
           >
             {isLoading ? "..." : "GET VIDEO"}
           </button>
@@ -179,12 +184,12 @@
         )
       }
 
-      const DetailsView = ({ details, url, onBack, onDownloadComplete }) => {
+      const DetailsView = ({ details, url, onBack, onDownloadComplete, isDownloading, setIsDownloading }) => { // Accept props
         const [selectedQuality, setSelectedQuality] = useState(
           details.formats[0]?.itag || ""
         );
         const [selectedType, setSelectedType] = useState("mp4");
-        const [isDownloading, setIsDownloading] = useState(false);
+        // const [isDownloading, setIsDownloading] = useState(false); // State removed from here
         const [progress, setProgress] = useState(0);
         const [progressText, setProgressText] = useState("");
         const [downloadedFilePath, setDownloadedFilePath] = useState(null);
@@ -230,7 +235,7 @@
             setDownloadedFilePath(result.path);
             onDownloadComplete();
           } else {
-             if (result.error !== "Download was canceled.") {
+              if (result.error !== "Download was canceled.") {
                 console.error(`Error: ${result.error}`);
               }
           }
@@ -259,12 +264,18 @@
 
         return (
           <div className="details-view">
-            <h2
-              className="view-title"
-              onClick={onBack}
-            >
-              &larr; BACK TO HISTORY
-            </h2>
+
+        <button
+      className="view-title"
+      onClick={onBack}
+      disabled={isDownloading}
+      style={{
+        color: isDownloading ? "#8b949e" : "inherit"
+      }}
+    >
+      &larr; BACK TO HISTORY
+    </button>
+
             <div className="details-layout-container">
               {/* --- Left Column --- */}
               <div className="details-left-column">
