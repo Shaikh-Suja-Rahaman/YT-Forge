@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
-const fs = require("fs");
+const fs = require("fs"); // Make sure fs is required
 const https = require("https");
 const ytdl = require("@distube/ytdl-core");
 const { spawn } = require("child_process");
@@ -11,7 +11,7 @@ const Store = _Store.default || _Store;
 
 const store = new Store();
 let mainWindow;
-let currentDownloadProcess = null; // Used to manage cancellation
+let currentDownloadProcess = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -46,7 +46,23 @@ const formatBytes = (bytes, decimals = 2) => {
 
 ipcMain.handle("get-history", () => store.get('downloadHistory', []));
 ipcMain.handle("clear-history", () => store.set('downloadHistory', []));
-ipcMain.handle("open-file-location", (event, filePath) => shell.showItemInFolder(filePath));
+
+// --- MODIFIED SECTION START ---
+ipcMain.handle("open-file-location", (event, filePath) => {
+  // 1. Check if the file exists at the stored path
+  if (fs.existsSync(filePath)) {
+    // 2. If it exists, show it in the folder
+    shell.showItemInFolder(filePath);
+  } else {
+    // 3. If not, show an error dialog to the user
+    dialog.showErrorBox(
+      "File Not Found",
+      "The file could not be found at the original location. It may have been moved or deleted."
+    );
+  }
+});
+// --- MODIFIED SECTION END ---
+
 ipcMain.handle("open-external-link", (event, url) => shell.openExternal(url));
 
 ipcMain.on("cancel-download", () => {
@@ -188,8 +204,8 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 });
 
             } else { // Combined stream
-                 const progressState = { video: { downloaded: 0, total: 1 } };
-                 await downloadStreamToFile(url, filePath, 'video', progressState);
+                const progressState = { video: { downloaded: 0, total: 1 } };
+                await downloadStreamToFile(url, filePath, 'video', progressState);
             }
         }
 
@@ -215,4 +231,3 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         currentDownloadProcess = null;
     }
 });
-

@@ -270,7 +270,8 @@
       onClick={onBack}
       disabled={isDownloading}
       style={{
-        color: isDownloading ? "#8b949e" : "inherit"
+        color: isDownloading ? "#8b949e" : "inherit",
+        cursor: isDownloading ? "not-allowed" : "pointer"
       }}
     >
       &larr; BACK TO HISTORY
