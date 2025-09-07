@@ -123,9 +123,19 @@
 
       const HistoryView = ({ history, setHistory }) => {
         const handleClearHistory = async () => {
-          await window.electronAPI.clearHistory();
-          setHistory([]);
+          // 1. Show a simple "OK/Cancel" popup.
+          const isConfirmed = window.confirm(
+            "Are you sure you want to clear the history? This cannot be undone."
+          );
+
+          // 2. If the user clicks "OK", proceed with clearing.
+          if (isConfirmed) {
+            await window.electronAPI.clearHistory();
+            setHistory([]);
+          }
+          // If they click "Cancel", do nothing.
         };
+
         return (
           <div className="history-view">
             <div className="history-header">
