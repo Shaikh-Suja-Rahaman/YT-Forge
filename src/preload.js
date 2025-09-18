@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternalLink: (url) => ipcRenderer.invoke("open-external-link", url),
   cancelDownload: () => ipcRenderer.send("cancel-download"),
   onDownloadProgress: (callback) => ipcRenderer.on("download-progress", (_event, value) => callback(value)),
+  //this is for test commit
 });
