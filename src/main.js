@@ -161,12 +161,20 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
             const fileStream = fs.createWriteStream(downloadPath);
 
             stream.on('progress', (chunkLength, downloaded, total) => {
-                progressState[streamType] = { downloaded, total };
-                const totalDownloaded = (progressState.video.downloaded || 0) + (progressState.audio.downloaded || 0);
-                const totalSize = (progressState.video.total || 0) + (progressState.audio.total || 0);
-                const percent = (totalDownloaded / totalSize) * 100;
-                mainWindow.webContents.send("download-progress", { percent, downloaded: totalDownloaded, total: totalSize });
-            });
+  progressState[streamType] = { downloaded, total };
+
+  const totalDownloaded = (progressState.video?.downloaded || 0) + (progressState.audio?.downloaded || 0);
+  const totalSize = (progressState.video?.total || 0) + (progressState.audio?.total || 0);
+
+  const percent = totalSize > 0 ? (totalDownloaded / totalSize) * 100 : 0;
+
+  mainWindow.webContents.send("download-progress", {
+    percent,
+    downloaded: totalDownloaded,
+    total: totalSize
+  });
+});
+
 
             stream.pipe(fileStream);
             fileStream.on('finish', () => {
@@ -198,10 +206,21 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 if (isCancelled) throw new Error("Download was canceled.");
 
                 await new Promise((resolve, reject) => {
-                    ffmpegProcess = spawn(ffmpegPath, ['-y', '-i', tempVideoPath, '-i', tempAudioPath, '-c', 'copy', filePath]);
-                    ffmpegProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited with code ${code}`)));
-                    ffmpegProcess.on('error', (err) => reject(err));
-                });
+    ffmpegProcess = spawn(ffmpegPath, [
+        '-y',
+        '-i', tempVideoPath,
+        '-i', tempAudioPath,
+        '-c:v', 'copy',        // keep video untouched
+        '-c:a', 'aac',         // re-encode audio to AAC (fixes Premiere issue)
+        '-b:a', '192k',        // set audio bitrate
+        filePath
+    ]);
+
+    ffmpegProcess.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`ffmpeg exited with code ${code}`))
+    );
+    ffmpegProcess.on('error', (err) => reject(err));
+});
 
             } else { // Combined stream
                 const progressState = { video: { downloaded: 0, total: 1 } };
