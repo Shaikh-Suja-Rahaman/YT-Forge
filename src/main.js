@@ -1,9 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
-const fs = require("fs"); // Make sure fs is required
+const fs = require("fs");
 const https = require("https");
-const ytdl = require("@distube/ytdl-core");
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
+const YTDlpWrap = require("yt-dlp-wrap").default;
 const ffmpegPath = require('ffmpeg-static');
 
 const _Store = require("electron-store");
@@ -12,6 +12,21 @@ const Store = _Store.default || _Store;
 const store = new Store();
 let mainWindow;
 let currentDownloadProcess = null;
+
+// Use the yt-dlp binary from the project root
+const ytDlpBinaryPath = path.join(app.getAppPath(), 'yt-dlp');
+
+// Ensure yt-dlp is executable
+if (fs.existsSync(ytDlpBinaryPath)) {
+  try {
+    fs.chmodSync(ytDlpBinaryPath, '755');
+    console.log('Using yt-dlp binary at:', ytDlpBinaryPath);
+  } catch (error) {
+    console.error('Failed to make yt-dlp executable:', error);
+  }
+} else {
+  console.error('yt-dlp binary not found at:', ytDlpBinaryPath);
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -73,28 +88,71 @@ ipcMain.on("cancel-download", () => {
 
 ipcMain.handle("get-video-info", async (event, url) => {
   try {
-    if (!ytdl.validateURL(url)) throw new Error("Invalid YouTube URL");
-    const info = await ytdl.getInfo(url);
+    console.log('Fetching video info for:', url);
+    const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
 
-    const mapFormat = f => ({
-        itag: f.itag,
-        quality: f.qualityLabel,
-        size: f.contentLength,
-        sizeFormatted: formatBytes(f.contentLength)
+    // Get video info using yt-dlp
+    const info = await ytDlp.getVideoInfo(url);
+
+    console.log('Total formats available:', info.formats.length);
+
+    // Extract video formats - prefer mp4/av01, filter out webm and fragmented formats
+    const videoFormats = info.formats
+      .filter(f =>
+        f.vcodec !== 'none' &&
+        f.height &&
+        f.acodec === 'none' &&  // Video only (will be merged with audio)
+        !f.format_id.includes('-') && // Exclude fragmented formats like 91-0, 92-1
+        (f.ext === 'mp4' || f.vcodec.includes('av01')) && // Prefer mp4 and av01 codec
+        f.height >= 360 // Filter out very low quality
+      )
+      .map(f => ({
+        itag: f.format_id,
+        quality: f.height + 'p' + (f.fps > 30 ? f.fps : ''),
+        height: f.height,
+        fps: f.fps || 30,
+        size: f.filesize || f.filesize_approx || 0,
+        sizeFormatted: formatBytes(f.filesize || f.filesize_approx || 0),
+        ext: f.ext,
+        vcodec: f.vcodec
+      }));
+
+    console.log('Video formats found:', videoFormats.length);
+    videoFormats.forEach(f => {
+      console.log(`Format: ${f.quality} (${f.itag}) - ${f.sizeFormatted} - ${f.ext} - ${f.vcodec}`);
     });
 
-    const videoFormats = ytdl.filterFormats(info.formats, 'videoonly').filter(f => f.container === 'mp4' && f.qualityLabel).map(mapFormat);
-    const combinedFormats = info.formats.filter(f => f.hasVideo && f.hasAudio && f.container === 'mp4' && f.qualityLabel).map(mapFormat);
-    const allFormatsMap = new Map();
-    [...combinedFormats, ...videoFormats].forEach(f => { if (!allFormatsMap.has(f.quality)) allFormatsMap.set(f.quality, f); });
-    const formats = Array.from(allFormatsMap.values()).sort((a, b) => parseInt(b.quality) - parseInt(a.quality));
+    // Group by height and take the best format for each resolution (prefer larger size = better bitrate)
+    const formatsByHeight = {};
+    videoFormats.forEach(f => {
+      const key = f.height;
+      if (!formatsByHeight[key] ||
+          formatsByHeight[key].size < f.size) {
+        formatsByHeight[key] = f;
+      }
+    });
 
-    const audioFormat = ytdl.filterFormats(info.formats, 'audioonly').sort((a,b) => b.bitrate - a.bitrate)[0];
+    const uniqueFormats = Object.values(formatsByHeight)
+      .sort((a, b) => b.height - a.height);    // Get audio format size
+    const audioFormat = info.formats
+      .filter(f => f.acodec !== 'none' && f.vcodec === 'none')
+      .sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+    const audioSize = audioFormat?.filesize || audioFormat?.filesize_approx || 0;
 
-    const thumbnails = info.videoDetails.thumbnails;
-    const thumbnailUrl = thumbnails[thumbnails.length - 1]?.url;
-    return { success: true, videoId: info.videoDetails.videoId, formats, title: info.videoDetails.title, description: info.videoDetails.description, thumbnailUrl, audioSizeFormatted: formatBytes(audioFormat?.contentLength) };
+    console.log('Unique formats to show:', uniqueFormats.length);
+    console.log('Best audio format:', audioFormat?.format_id, formatBytes(audioSize));
+
+    return {
+      success: true,
+      videoId: info.id,
+      formats: uniqueFormats.length > 0 ? uniqueFormats : [{ itag: 'best', quality: 'Best', size: 0, sizeFormatted: 'N/A' }],
+      title: info.title,
+      description: info.description || '',
+      thumbnailUrl: info.thumbnail,
+      audioSizeFormatted: formatBytes(audioSize)
+    };
   } catch (error) {
+    console.error("Error fetching video info:", error);
     return { success: false, error: error.message };
   }
 });
@@ -128,114 +186,124 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
     if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
 
-    let isCancelled = false;
-    let activeStreams = [];
-    let ffmpegProcess;
-    let tempVideoPath = path.join(app.getPath('temp'), `${videoId}_video.tmp`);
-    let tempAudioPath = path.join(app.getPath('temp'), `${videoId}_audio.tmp`);
+    // Delete the file if it already exists to force re-download
+    if (fs.existsSync(filePath)) {
+        try {
+            fs.unlinkSync(filePath);
+            console.log('Deleted existing file to force fresh download');
+        } catch (err) {
+            console.error('Failed to delete existing file:', err);
+        }
+    }
 
-    const cleanup = () => {
-        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
-    };
+    let isCancelled = false;
+    let ytDlpProcess = null;
 
     currentDownloadProcess = {
         cancel: () => {
             isCancelled = true;
-            activeStreams.forEach(s => s.destroy());
-            if (ffmpegProcess) ffmpegProcess.kill('SIGKILL');
-            cleanup();
+            if (ytDlpProcess) {
+                ytDlpProcess.kill('SIGTERM');
+            }
         }
-    };
-
-    const downloadStreamToFile = (streamUrl, downloadPath, streamType, progressState) => {
-        return new Promise((resolve, reject) => {
-            if (isCancelled) return reject(new Error("Download was canceled."));
-
-            const ytdlOptions = {
-                quality: streamType === 'video' ? quality : 'highestaudio',
-                highWaterMark: 1 << 26 // 64MB buffer
-            };
-            const stream = ytdl(streamUrl, ytdlOptions);
-            activeStreams.push(stream);
-            const fileStream = fs.createWriteStream(downloadPath);
-
-            stream.on('progress', (chunkLength, downloaded, total) => {
-  progressState[streamType] = { downloaded, total };
-
-  const totalDownloaded = (progressState.video?.downloaded || 0) + (progressState.audio?.downloaded || 0);
-  const totalSize = (progressState.video?.total || 0) + (progressState.audio?.total || 0);
-
-  const percent = totalSize > 0 ? (totalDownloaded / totalSize) * 100 : 0;
-
-  mainWindow.webContents.send("download-progress", {
-    percent,
-    downloaded: totalDownloaded,
-    total: totalSize
-  });
-});
-
-
-            stream.pipe(fileStream);
-            fileStream.on('finish', () => {
-                activeStreams = activeStreams.filter(s => s !== stream);
-                resolve();
-            });
-            stream.on('error', (err) => reject(err));
-            fileStream.on('error', (err) => reject(err));
-        });
     };
 
     try {
+        const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
+
+        // Build yt-dlp arguments
+        let formatArg;
         if (type === 'mp3') {
-            const progressState = { audio: { downloaded: 0, total: 1 } };
-            await downloadStreamToFile(url, filePath, 'audio', progressState);
+            formatArg = 'bestaudio[ext=m4a]/bestaudio';
         } else {
-            const info = await ytdl.getInfo(url);
-            const format = info.formats.find(f => f.itag == quality);
-            const hasSeparateStreams = format && format.hasVideo && !format.hasAudio;
-
-            if (hasSeparateStreams) {
-                const progressState = { video: { downloaded: 0, total: 1 }, audio: { downloaded: 0, total: 1 } };
-
-                await Promise.all([
-                    downloadStreamToFile(url, tempVideoPath, 'video', progressState),
-                    downloadStreamToFile(url, tempAudioPath, 'audio', progressState)
-                ]);
-
-                if (isCancelled) throw new Error("Download was canceled.");
-
-                await new Promise((resolve, reject) => {
-    ffmpegProcess = spawn(ffmpegPath, [
-        '-y',
-        '-i', tempVideoPath,
-        '-i', tempAudioPath,
-        '-c:v', 'copy',        // keep video untouched
-        '-c:a', 'aac',         // re-encode audio to AAC (fixes Premiere issue)
-        '-b:a', '192k',        // set audio bitrate
-        filePath
-    ]);
-
-    ffmpegProcess.on('close', (code) =>
-        code === 0 ? resolve() : reject(new Error(`ffmpeg exited with code ${code}`))
-    );
-    ffmpegProcess.on('error', (err) => reject(err));
-});
-
-            } else { // Combined stream
-                const progressState = { video: { downloaded: 0, total: 1 } };
-                await downloadStreamToFile(url, filePath, 'video', progressState);
+            // For video, use the specific format_id (itag) + best audio
+            if (quality === 'best' || quality === 'Best') {
+                // Get the absolute best quality available
+                formatArg = 'bestvideo+bestaudio/best';
+            } else {
+                // Use specific format_id (itag) and merge with best audio
+                formatArg = `${quality}+bestaudio/best`;
             }
         }
 
+        console.log('Download request - Selected format:', formatArg, 'Quality itag:', quality, 'Type:', type);
+
+        const args = [
+            url,
+            '--format', formatArg,
+            '--output', filePath,
+            '--ffmpeg-location', ffmpegPath,
+            '--no-playlist',
+            '--newline',
+            '--verbose',  // Add verbose output to see what's happening
+        ];
+
+        if (type === 'mp3') {
+            args.push(
+                '--extract-audio',
+                '--audio-format', 'mp3',
+                '--audio-quality', '0'
+            );
+        } else {
+            args.push('--merge-output-format', 'mp4');
+        }
+
+        console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
+
+        // Use execStream for better process control
+        ytDlpProcess = spawn(ytDlpBinaryPath, args);
+
+        let lastProgress = 0;
+
+        ytDlpProcess.stdout.on('data', (data) => {
+            const output = data.toString();
+            console.log('yt-dlp output:', output);
+
+            // Parse progress from yt-dlp output
+            const downloadMatch = output.match(/(\d+\.?\d*)%/);
+            if (downloadMatch) {
+                const percent = parseFloat(downloadMatch[1]);
+                if (percent !== lastProgress) {
+                    lastProgress = percent;
+                    mainWindow.webContents.send("download-progress", {
+                        percent,
+                        downloaded: percent,
+                        total: 100
+                    });
+                }
+            }
+        });
+
+        ytDlpProcess.stderr.on('data', (data) => {
+            console.log('yt-dlp stderr:', data.toString());
+        });
+
+        await new Promise((resolve, reject) => {
+            ytDlpProcess.on('close', (code) => {
+                if (isCancelled) {
+                    reject(new Error("Download was canceled."));
+                } else if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`yt-dlp exited with code ${code}`));
+                }
+            });
+            ytDlpProcess.on('error', (err) => reject(err));
+        });
+
         if (isCancelled) throw new Error("Download was canceled.");
 
+        // Add to history
         const history = store.get('downloadHistory', []);
         const label = type === 'mp3' ? 'AUDIO' : qualityLabel;
         const newHistoryItem = {
-            id: videoId, title, thumbnailUrl, url,
+            id: videoId,
+            title,
+            thumbnailUrl,
+            url,
             format: `${label} (${type.toUpperCase()})`,
-            path: filePath, timestamp: new Date().toISOString(),
+            path: filePath,
+            timestamp: new Date().toISOString(),
         };
         const updatedHistory = [newHistoryItem, ...history.filter(h => h.id !== videoId || h.path !== filePath)];
         store.set('downloadHistory', updatedHistory);
@@ -246,7 +314,6 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         if (fs.existsSync(filePath) && !isCancelled) fs.unlinkSync(filePath);
         return { success: false, error: err.message };
     } finally {
-        cleanup();
         currentDownloadProcess = null;
     }
 });

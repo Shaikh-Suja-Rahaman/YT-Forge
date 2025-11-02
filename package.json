@@ -31,11 +31,13 @@
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
     "@vitejs/plugin-react": "^4.5.2",
+    "cookie-parser": "^1.4.7",
     "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^10.1.0",
     "ffmpeg-static": "^5.2.0",
     "lucide-react": "^0.542.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "yt-dlp-wrap": "^2.3.12"
   }
 }
