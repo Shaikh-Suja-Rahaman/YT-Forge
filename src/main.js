@@ -245,7 +245,12 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 '--audio-quality', '0'
             );
         } else {
-            args.push('--merge-output-format', 'mp4');
+      // Ensure merged MP4 has an AAC audio track that Premiere can read.
+      // Some sources provide opus or other audio codecs which may be inside
+      // the container after merging and are not supported by Premiere.
+      // Force ffmpeg to re-encode audio to AAC @ 192k during post-processing.
+      args.push('--merge-output-format', 'mp4');
+      args.push('--postprocessor-args', '-c:a aac -b:a 192k');
         }
 
         console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
