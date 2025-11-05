@@ -106,15 +106,22 @@ ipcMain.handle("get-video-info", async (event, url) => {
     // Extract video formats - ONLY H.264 to avoid re-encoding delays
     // This means faster downloads but may limit quality on some videos
     const videoFormats = info.formats
-      .filter(f =>
-        f.vcodec !== 'none' &&
-        f.height &&
-        f.acodec === 'none' &&  // Video only (will be merged with audio)
-        !f.format_id.includes('-') && // Exclude fragmented formats like 91-0, 92-1
-        f.ext === 'mp4' && // Only MP4 container
-        (f.vcodec.includes('avc1') || f.vcodec.includes('h264')) && // ONLY H.264 (no VP9, no conversion needed)
-        f.height >= 360 // Filter out very low quality
-      )
+      .filter(f => {
+        const isVideoOnly = f.vcodec !== 'none' && f.height && f.acodec === 'none';
+        const isNotFragmented = !f.format_id.includes('-');
+        const isMp4 = f.ext === 'mp4';
+        const isH264 = f.vcodec && (f.vcodec.includes('avc1') || f.vcodec.includes('h264'));
+        const notVP9 = !f.vcodec.includes('vp9') && !f.vcodec.includes('vp09');
+        const notAV1 = !f.vcodec.includes('av01');
+        const isGoodQuality = f.height >= 360;
+
+        // Debug logging
+        if (isVideoOnly && isNotFragmented && isMp4) {
+          console.log(`Checking format ${f.format_id}: codec=${f.vcodec}, isH264=${isH264}, notVP9=${notVP9}`);
+        }
+
+        return isVideoOnly && isNotFragmented && isMp4 && isH264 && notVP9 && notAV1 && isGoodQuality;
+      })
       .map(f => ({
         itag: f.format_id,
         quality: f.height + 'p' + (f.fps > 30 ? f.fps : ''),
