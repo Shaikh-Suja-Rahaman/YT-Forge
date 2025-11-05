@@ -5,6 +5,7 @@ const https = require("https");
 const { spawn, execSync } = require("child_process");
 const YTDlpWrap = require("yt-dlp-wrap").default;
 const ffmpegPath = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
 
 const _Store = require("electron-store");
 const Store = _Store.default || _Store;
@@ -39,7 +40,13 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindow.loadFile("index.html");
+
+  // In development, load from Vite dev server; in production, load the file
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+  }
 }
 
 app.whenReady().then(createWindow);
@@ -96,14 +103,16 @@ ipcMain.handle("get-video-info", async (event, url) => {
 
     console.log('Total formats available:', info.formats.length);
 
-    // Extract video formats - prefer mp4/av01, filter out webm and fragmented formats
+    // Extract video formats - ONLY H.264 to avoid re-encoding delays
+    // This means faster downloads but may limit quality on some videos
     const videoFormats = info.formats
       .filter(f =>
         f.vcodec !== 'none' &&
         f.height &&
         f.acodec === 'none' &&  // Video only (will be merged with audio)
         !f.format_id.includes('-') && // Exclude fragmented formats like 91-0, 92-1
-        (f.ext === 'mp4' || f.vcodec.includes('av01')) && // Prefer mp4 and av01 codec
+        f.ext === 'mp4' && // Only MP4 container
+        (f.vcodec.includes('avc1') || f.vcodec.includes('h264')) && // ONLY H.264 (no VP9, no conversion needed)
         f.height >= 360 // Filter out very low quality
       )
       .map(f => ({
@@ -245,12 +254,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 '--audio-quality', '0'
             );
         } else {
-      // Ensure merged MP4 has an AAC audio track that Premiere can read.
-      // Some sources provide opus or other audio codecs which may be inside
-      // the container after merging and are not supported by Premiere.
-      // Force ffmpeg to re-encode audio to AAC @ 192k during post-processing.
+      // Merge H.264 video with AAC audio - no re-encoding needed!
+      // Since we filter for H.264 only, this will be fast
       args.push('--merge-output-format', 'mp4');
-      args.push('--postprocessor-args', '-c:a aac -b:a 192k');
+      args.push('--postprocessor-args', '-c:v copy -c:a aac -b:a 192k');  // Copy video (fast), encode audio to AAC
         }
 
         console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
@@ -297,6 +304,8 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         });
 
         if (isCancelled) throw new Error("Download was canceled.");
+
+        console.log('Download complete! File saved at:', filePath);
 
         // Add to history
         const history = store.get('downloadHistory', []);
