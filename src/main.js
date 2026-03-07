@@ -144,7 +144,9 @@ ipcMain.handle("get-video-info", async (event, url) => {
     const info = JSON.parse(stdout);
     console.log('Total formats available:', info.formats.length);
 
-    // Build quality list from ALL video formats (adaptive + muxed)
+    // Build quality list from ALL video formats (adaptive + muxed).
+    // Priority: adaptive H.264 > adaptive VP9 > muxed H.264 > muxed VP9.
+    // AV1 is always skipped — poor app compatibility.
     const heightMap = {};
     info.formats.forEach(f => {
       if (!f.height || f.height < 360) return;
@@ -154,20 +156,25 @@ ipcMain.handle("get-video-info", async (event, url) => {
       const size = f.filesize || f.filesize_approx || 0;
       const fps = f.fps || 30;
       const isAdaptive = f.acodec === 'none';
+      const isH264 = f.vcodec.startsWith('avc') || f.vcodec === 'h264';
       const key = `${h}_${fps > 30 ? fps : 30}`;
-      if (!heightMap[key] || (!heightMap[key].isAdaptive && isAdaptive) ||
-          (heightMap[key].isAdaptive === isAdaptive && size > heightMap[key].size)) {
-        heightMap[key] = { height: h, fps, size, isAdaptive };
+      // Score: adaptive = 2 pts, H.264 = 1 pt — higher score wins
+      const score = (isAdaptive ? 2 : 0) + (isH264 ? 1 : 0);
+      const cur = heightMap[key];
+      const curScore = cur ? (cur.isAdaptive ? 2 : 0) + (cur.isH264 ? 1 : 0) : -1;
+      if (score > curScore || (score === curScore && size > (cur?.size || 0))) {
+        heightMap[key] = { height: h, fps, size, isAdaptive, isH264 };
       }
     });
 
     const uniqueFormats = Object.values(heightMap)
       .map(f => ({
         itag: `${f.height}`,      // height string used as identifier
-        quality: `${f.height}p${f.fps > 30 ? f.fps : ''}`,
+        quality: `${f.height}p${f.fps > 30 ? f.fps : ''}${f.isH264 ? '' : ' (VP9)'}`,
         height: f.height,
         size: f.size,
         sizeFormatted: f.size > 0 ? formatBytes(f.size) : 'N/A',
+        isH264: f.isH264,
       }))
       .sort((a, b) => b.height - a.height);
 
@@ -251,13 +258,24 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       } else {
         const h = parseInt(quality);
         if (!isNaN(h)) {
-          // Best video at requested height + best audio → merged by ffmpeg into mp4
-          formatArg = `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
-                      `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
-                      `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
-                      `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
+          // Prefer H.264 (avc) for QuickTime / Premiere Pro / iMovie compatibility.
+          // Fall back to VP9 only if H.264 isn't available (e.g. 1440p / 4K).
+          // AV1 is never selected.
+          formatArg =
+            `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
+            `bestvideo[height=${h}][vcodec^=avc]+bestaudio/` +
+            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
+            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio/` +
+            `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+            `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
+            `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+            `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
         } else {
-          formatArg = 'bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[vcodec!^=av01]+bestaudio/best';
+          formatArg =
+            'bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/' +
+            'bestvideo[vcodec^=avc]+bestaudio/' +
+            'bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/' +
+            'bestvideo[vcodec!^=av01]+bestaudio/best';
         }
       }
 
