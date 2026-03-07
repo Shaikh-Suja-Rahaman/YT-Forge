@@ -29,9 +29,15 @@ const DetailsView = () => {
   }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted]);
 
   useEffect(() => {
-    const listener = ({ percent, downloaded, total }) => {
+    const listener = ({ percent = 0, downloadedBytes = 0, totalBytes = 0 }) => {
       setProgress(percent);
-      setProgressText(`${formatBytes(downloaded)} / ${formatBytes(total)}`);
+      if (totalBytes > 0) {
+        setProgressText(`${percent.toFixed(1)}% — ${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`);
+      } else if (percent > 0) {
+        setProgressText(`${percent.toFixed(1)}%`);
+      } else {
+        setProgressText('Starting...');
+      }
     };
     window.electronAPI.onDownloadProgress(listener);
   }, []);

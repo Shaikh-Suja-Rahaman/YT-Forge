@@ -66,6 +66,23 @@ const formatBytes = (bytes, decimals = 2) => {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 };
 
+const sizeToBytes = (value, unit) => {
+  const normalizedUnit = (unit || '').toUpperCase();
+  const multiplierMap = {
+    B: 1,
+    KB: 1024,
+    KIB: 1024,
+    MB: 1024 ** 2,
+    MIB: 1024 ** 2,
+    GB: 1024 ** 3,
+    GIB: 1024 ** 3,
+    TB: 1024 ** 4,
+    TIB: 1024 ** 4,
+  };
+  const multiplier = multiplierMap[normalizedUnit] || 1;
+  return Math.round(value * multiplier);
+};
+
 ipcMain.handle("get-history", () => store.get('downloadHistory', []));
 ipcMain.handle("clear-history", () => store.set('downloadHistory', []));
 
@@ -103,24 +120,17 @@ ipcMain.handle("get-video-info", async (event, url) => {
 
     console.log('Total formats available:', info.formats.length);
 
-    // Extract video formats - ONLY H.264 to avoid re-encoding delays
-    // This means faster downloads but may limit quality on some videos
+    // Extract video formats - Allow all formats, will convert to H.264 if needed
+    // This gives access to all quality options but may require conversion
     const videoFormats = info.formats
       .filter(f => {
         const isVideoOnly = f.vcodec !== 'none' && f.height && f.acodec === 'none';
         const isNotFragmented = !f.format_id.includes('-');
-        const isMp4 = f.ext === 'mp4';
-        const isH264 = f.vcodec && (f.vcodec.includes('avc1') || f.vcodec.includes('h264'));
-        const notVP9 = !f.vcodec.includes('vp9') && !f.vcodec.includes('vp09');
-        const notAV1 = !f.vcodec.includes('av01');
+        const isMP4orWebM = f.ext === 'mp4' || f.ext === 'webm';
+        const notAV1 = !f.vcodec.includes('av01'); // AV1 causes issues, skip it
         const isGoodQuality = f.height >= 360;
 
-        // Debug logging
-        if (isVideoOnly && isNotFragmented && isMp4) {
-          console.log(`Checking format ${f.format_id}: codec=${f.vcodec}, isH264=${isH264}, notVP9=${notVP9}`);
-        }
-
-        return isVideoOnly && isNotFragmented && isMp4 && isH264 && notVP9 && notAV1 && isGoodQuality;
+        return isVideoOnly && isNotFragmented && isMP4orWebM && notAV1 && isGoodQuality;
       })
       .map(f => ({
         itag: f.format_id,
@@ -219,100 +229,122 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         cancel: () => {
             isCancelled = true;
             if (ytDlpProcess) {
-                ytDlpProcess.kill('SIGTERM');
+                ytDlpProcess.kill(); // SIGTERM by default
             }
         }
     };
 
     try {
-        const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
+      const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
 
-        // Build yt-dlp arguments
-        let formatArg;
-        if (type === 'mp3') {
-            formatArg = 'bestaudio[ext=m4a]/bestaudio';
+      let formatArg;
+      if (type === 'mp3') {
+        formatArg = 'bestaudio[ext=m4a]/bestaudio';
+      } else {
+        if (quality === 'best' || quality === 'Best') {
+          formatArg = 'bestvideo+bestaudio/best';
         } else {
-            // For video, use the specific format_id (itag) + best audio
-            if (quality === 'best' || quality === 'Best') {
-                // Get the absolute best quality available
-                formatArg = 'bestvideo+bestaudio/best';
-            } else {
-                // Use specific format_id (itag) and merge with best audio
-                formatArg = `${quality}+bestaudio/best`;
-            }
+          formatArg = `${quality}+bestaudio/best`;
         }
+      }
 
-        console.log('Download request - Selected format:', formatArg, 'Quality itag:', quality, 'Type:', type);
+      console.log('Download request - Selected format:', formatArg, 'Quality itag:', quality, 'Type:', type);
 
-        const args = [
-            url,
-            '--format', formatArg,
-            '--output', filePath,
-            '--ffmpeg-location', ffmpegPath,
-            '--no-playlist',
-            '--newline',
-            '--verbose',  // Add verbose output to see what's happening
-        ];
+      const args = [
+        url,
+        '--format', formatArg,
+        '--output', filePath,
+        '--ffmpeg-location', ffmpegPath,
+        '--no-playlist',
+        '--newline',
+        '--ignore-config',
+        '--retries', '5',
+        '--retry-sleep', '3',
+        // Use the TV client — it is not affected by YouTube's SABR streaming enforcement
+        '--extractor-args', 'youtube:player_client=tv,default',
+      ];
 
-        if (type === 'mp3') {
-            args.push(
-                '--extract-audio',
-                '--audio-format', 'mp3',
-                '--audio-quality', '0'
-            );
-        } else {
-      // Merge H.264 video with AAC audio - no re-encoding needed!
-      // Since we filter for H.264 only, this will be fast
-      args.push('--merge-output-format', 'mp4');
-      args.push('--postprocessor-args', '-c:v copy -c:a aac -b:a 192k');  // Copy video (fast), encode audio to AAC
-        }
+      if (type === 'mp3') {
+        args.push(
+          '--extract-audio',
+          '--audio-format', 'mp3',
+          '--audio-quality', '0'
+        );
+      } else {
+        // Merge into mp4 container; avoid --recode-video so we don't re-encode unnecessarily
+        args.push('--merge-output-format', 'mp4');
+      }
 
-        console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
+      console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
 
-        // Use execStream for better process control
-        ytDlpProcess = spawn(ytDlpBinaryPath, args);
+      // Use spawn directly so we get raw stdout/stderr streams for progress parsing
+      ytDlpProcess = spawn(ytDlpBinaryPath, args);
 
-        let lastProgress = 0;
+      // Send an initial "started" event so the UI shows activity immediately
+      mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0 });
 
-        ytDlpProcess.stdout.on('data', (data) => {
-            const output = data.toString();
-            console.log('yt-dlp output:', output);
+      let lastPercent = -1;
+      let stdoutBuf = '';
 
-            // Parse progress from yt-dlp output
-            const downloadMatch = output.match(/(\d+\.?\d*)%/);
-            if (downloadMatch) {
-                const percent = parseFloat(downloadMatch[1]);
-                if (percent !== lastProgress) {
-                    lastProgress = percent;
-                    mainWindow.webContents.send("download-progress", {
-                        percent,
-                        downloaded: percent,
-                        total: 100
-                    });
-                }
-            }
+      ytDlpProcess.stdout.on('data', (chunk) => {
+        stdoutBuf += chunk.toString();
+        const lines = stdoutBuf.split(/\r?\n/);
+        stdoutBuf = lines.pop(); // keep incomplete last line
+        lines.forEach((line) => {
+          if (!line.trim()) return;
+          console.log('yt-dlp:', line);
+          // yt-dlp progress line looks like: [download]  12.3% of   54.23MiB at  3.10MiB/s ETA 00:15
+          const downloadMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGTi]+B)/i);
+          let percentValue = null;
+          let downloadedBytes = 0;
+          let totalBytes = 0;
+
+          if (downloadMatch) {
+            percentValue = Math.min(100, parseFloat(downloadMatch[1]));
+            const totalValue = parseFloat(downloadMatch[2]);
+            const unit = downloadMatch[3];
+            totalBytes = sizeToBytes(totalValue, unit);
+            downloadedBytes = Math.round(totalBytes * (percentValue / 100));
+          } else {
+            // Fallback: grab any bare percentage in the line
+            const bare = line.match(/(?:^|\s)(\d{1,3}\.?\d*)%/);
+            if (bare) percentValue = Math.min(100, parseFloat(bare[1]));
+          }
+
+          if (percentValue !== null && percentValue !== lastPercent) {
+            lastPercent = percentValue;
+            mainWindow.webContents.send('download-progress', { percent: percentValue, downloadedBytes, totalBytes });
+          }
         });
+      });
 
-        ytDlpProcess.stderr.on('data', (data) => {
-            console.log('yt-dlp stderr:', data.toString());
+      ytDlpProcess.stderr.on('data', (data) => {
+        console.error('yt-dlp stderr:', data.toString());
+      });
+
+      await new Promise((resolve, reject) => {
+        ytDlpProcess.on('close', (code) => {
+          if (isCancelled) {
+            reject(new Error('Download was canceled.'));
+          } else if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`yt-dlp exited with code ${code}`));
+          }
         });
+        ytDlpProcess.on('error', (err) => reject(err));
+      });
 
-        await new Promise((resolve, reject) => {
-            ytDlpProcess.on('close', (code) => {
-                if (isCancelled) {
-                    reject(new Error("Download was canceled."));
-                } else if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`yt-dlp exited with code ${code}`));
-                }
-            });
-            ytDlpProcess.on('error', (err) => reject(err));
-        });
+      if (isCancelled) throw new Error("Download was canceled.");
 
-        if (isCancelled) throw new Error("Download was canceled.");
+      console.log('Download complete! File saved at:', filePath);
 
-        console.log('Download complete! File saved at:', filePath);
+      const finalSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+      mainWindow.webContents.send("download-progress", {
+        percent: 100,
+        downloadedBytes: finalSize,
+        totalBytes: finalSize,
+      });
 
         // Add to history
         const history = store.get('downloadHistory', []);
