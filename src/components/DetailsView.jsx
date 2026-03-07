@@ -45,7 +45,7 @@ const DetailsView = () => {
   const handleDownload = async () => {
     setIsDownloading(true);
     setProgress(0);
-    setProgressText("");
+    setProgressText("Preparing download...");
     setDownloadedFilePath(null);
     console.log("Initializing download...");
 
@@ -174,8 +174,8 @@ const DetailsView = () => {
                 <p className="progress-text">{progressText}</p>
                 <div className="progress-bar-container">
                   <div
-                    className="progress-bar"
-                    style={{ width: `${progress}%` }}
+                    className={`progress-bar${progress === 0 ? ' indeterminate' : ''}`}
+                    style={progress > 0 ? { width: `${progress}%` } : {}}
                   ></div>
                 </div>
               </div>

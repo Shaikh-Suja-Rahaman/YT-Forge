@@ -3,12 +3,20 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const { spawn, execSync } = require("child_process");
-const YTDlpWrap = require("yt-dlp-wrap").default;
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
 
 const _Store = require("electron-store");
 const Store = _Store.default || _Store;
+
+// Base yt-dlp flags shared by info fetch and download
+// (no --extractor-args: let yt-dlp use its defaults, which return all 40+ adaptive formats)
+const BASE_ARGS = [
+  '--no-playlist',
+  '--ignore-config',
+  '--retries', '5',
+  '--retry-sleep', '3',
+];
 
 const store = new Store();
 let mainWindow;
@@ -113,60 +121,62 @@ ipcMain.on("cancel-download", () => {
 ipcMain.handle("get-video-info", async (event, url) => {
   try {
     console.log('Fetching video info for:', url);
-    const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
 
-    // Get video info using yt-dlp
-    const info = await ytDlp.getVideoInfo(url);
-
-    console.log('Total formats available:', info.formats.length);
-
-    // Extract video formats - Allow all formats, will convert to H.264 if needed
-    // This gives access to all quality options but may require conversion
-    const videoFormats = info.formats
-      .filter(f => {
-        const isVideoOnly = f.vcodec !== 'none' && f.height && f.acodec === 'none';
-        const isNotFragmented = !f.format_id.includes('-');
-        const isMP4orWebM = f.ext === 'mp4' || f.ext === 'webm';
-        const notAV1 = !f.vcodec.includes('av01'); // AV1 causes issues, skip it
-        const isGoodQuality = f.height >= 360;
-
-        return isVideoOnly && isNotFragmented && isMP4orWebM && notAV1 && isGoodQuality;
-      })
-      .map(f => ({
-        itag: f.format_id,
-        quality: f.height + 'p' + (f.fps > 30 ? f.fps : ''),
-        height: f.height,
-        fps: f.fps || 30,
-        size: f.filesize || f.filesize_approx || 0,
-        sizeFormatted: formatBytes(f.filesize || f.filesize_approx || 0),
-        ext: f.ext,
-        vcodec: f.vcodec
-      }));
-
-    console.log('Video formats found:', videoFormats.length);
-    videoFormats.forEach(f => {
-      console.log(`Format: ${f.quality} (${f.itag}) - ${f.sizeFormatted} - ${f.ext} - ${f.vcodec}`);
+    // Use execPromise with --dump-json directly — avoids yt-dlp-wrap's internal
+    // "-f best" flag which limits results to a single 360p pre-merged stream
+    const stdout = await new Promise((resolve, reject) => {
+      const proc = spawn(ytDlpBinaryPath, [
+        url,
+        '--dump-json',
+        ...BASE_ARGS,
+      ]);
+      let out = '';
+      let err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', code => {
+        if (code === 0) resolve(out);
+        else reject(new Error(err || `yt-dlp exited with code ${code}`));
+      });
+      proc.on('error', reject);
     });
 
-    // Group by height and take the best format for each resolution (prefer larger size = better bitrate)
-    const formatsByHeight = {};
-    videoFormats.forEach(f => {
-      const key = f.height;
-      if (!formatsByHeight[key] ||
-          formatsByHeight[key].size < f.size) {
-        formatsByHeight[key] = f;
+    const info = JSON.parse(stdout);
+    console.log('Total formats available:', info.formats.length);
+
+    // Build quality list from ALL video formats (adaptive + muxed)
+    const heightMap = {};
+    info.formats.forEach(f => {
+      if (!f.height || f.height < 360) return;
+      if (!f.vcodec || f.vcodec === 'none') return;
+      if (f.vcodec.startsWith('av01')) return; // skip AV1
+      const h = f.height;
+      const size = f.filesize || f.filesize_approx || 0;
+      const fps = f.fps || 30;
+      const isAdaptive = f.acodec === 'none';
+      const key = `${h}_${fps > 30 ? fps : 30}`;
+      if (!heightMap[key] || (!heightMap[key].isAdaptive && isAdaptive) ||
+          (heightMap[key].isAdaptive === isAdaptive && size > heightMap[key].size)) {
+        heightMap[key] = { height: h, fps, size, isAdaptive };
       }
     });
 
-    const uniqueFormats = Object.values(formatsByHeight)
-      .sort((a, b) => b.height - a.height);    // Get audio format size
+    const uniqueFormats = Object.values(heightMap)
+      .map(f => ({
+        itag: `${f.height}`,      // height string used as identifier
+        quality: `${f.height}p${f.fps > 30 ? f.fps : ''}`,
+        height: f.height,
+        size: f.size,
+        sizeFormatted: f.size > 0 ? formatBytes(f.size) : 'N/A',
+      }))
+      .sort((a, b) => b.height - a.height);
+
+    console.log('Available qualities:', uniqueFormats.map(f => f.quality).join(', '));
+
     const audioFormat = info.formats
       .filter(f => f.acodec !== 'none' && f.vcodec === 'none')
       .sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
     const audioSize = audioFormat?.filesize || audioFormat?.filesize_approx || 0;
-
-    console.log('Unique formats to show:', uniqueFormats.length);
-    console.log('Best audio format:', audioFormat?.format_id, formatBytes(audioSize));
 
     return {
       success: true,
@@ -175,7 +185,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
       title: info.title,
       description: info.description || '',
       thumbnailUrl: info.thumbnail,
-      audioSizeFormatted: formatBytes(audioSize)
+      audioSizeFormatted: formatBytes(audioSize),
     };
   } catch (error) {
     console.error("Error fetching video info:", error);
@@ -235,16 +245,19 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     };
 
     try {
-      const ytDlp = new YTDlpWrap(ytDlpBinaryPath);
-
       let formatArg;
       if (type === 'mp3') {
         formatArg = 'bestaudio[ext=m4a]/bestaudio';
       } else {
-        if (quality === 'best' || quality === 'Best') {
-          formatArg = 'bestvideo+bestaudio/best';
+        const h = parseInt(quality);
+        if (!isNaN(h)) {
+          // Best video at requested height + best audio → merged by ffmpeg into mp4
+          formatArg = `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+                      `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
+                      `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+                      `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
         } else {
-          formatArg = `${quality}+bestaudio/best`;
+          formatArg = 'bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[vcodec!^=av01]+bestaudio/best';
         }
       }
 
@@ -255,23 +268,14 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         '--format', formatArg,
         '--output', filePath,
         '--ffmpeg-location', ffmpegPath,
-        '--no-playlist',
         '--newline',
-        '--ignore-config',
-        '--retries', '5',
-        '--retry-sleep', '3',
-        // Use the TV client — it is not affected by YouTube's SABR streaming enforcement
-        '--extractor-args', 'youtube:player_client=tv,default',
+        ...BASE_ARGS,
       ];
 
       if (type === 'mp3') {
-        args.push(
-          '--extract-audio',
-          '--audio-format', 'mp3',
-          '--audio-quality', '0'
-        );
+        args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0');
       } else {
-        // Merge into mp4 container; avoid --recode-video so we don't re-encode unnecessarily
+        // ffmpeg merges separate video+audio streams into a single mp4 container
         args.push('--merge-output-format', 'mp4');
       }
 
