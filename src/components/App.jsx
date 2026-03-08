@@ -1,5 +1,7 @@
 import React from 'react';
 import { AppProvider, useAppContext } from '../contexts/AppContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Card, CardContent } from '@/components/ui/card';
 import Header from './Header';
 import HistoryView from './HistoryView';
 import DetailsView from './DetailsView';
@@ -9,17 +11,19 @@ const AppContent = () => {
   const { isLoading, videoDetails } = useAppContext();
 
   return (
-    <div className="app-container">
+    <div className="flex flex-col gap-4 h-full">
       <Header />
-      <main className="content-box">
-        {isLoading ? (
-          <LoadingComponent />
-        ) : videoDetails ? (
-          <DetailsView />
-        ) : (
-          <HistoryView />
-        )}
-      </main>
+      <Card className="flex-1 overflow-hidden border-border/50">
+        <CardContent className="flex flex-col h-full p-5">
+          {isLoading ? (
+            <LoadingComponent />
+          ) : videoDetails ? (
+            <DetailsView />
+          ) : (
+            <HistoryView />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
@@ -27,7 +31,9 @@ const AppContent = () => {
 function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <TooltipProvider delayDuration={300}>
+        <AppContent />
+      </TooltipProvider>
     </AppProvider>
   );
 }

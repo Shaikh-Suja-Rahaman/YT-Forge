@@ -1,6 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { formatBytes } from '../utils/formatBytes';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  ArrowLeft,
+  Download,
+  ImageDown,
+  FolderOpen,
+  Loader2,
+  X,
+  HardDrive,
+  CheckCircle2,
+} from 'lucide-react';
 
 const DetailsView = () => {
   const {
@@ -13,7 +32,7 @@ const DetailsView = () => {
   } = useAppContext();
 
   const [selectedQuality, setSelectedQuality] = useState(
-    details.formats[0]?.itag || ""
+    String(details.formats[0]?.itag || "")
   );
   const [selectedType, setSelectedType] = useState("mp4");
   const [progress, setProgress] = useState(0);
@@ -25,7 +44,7 @@ const DetailsView = () => {
     if (selectedType === 'mp3') {
       return details.audioSizeFormatted || 'N/A';
     }
-    const format = details.formats.find(f => f.itag == selectedQuality);
+    const format = details.formats.find(f => String(f.itag) === selectedQuality);
     return format?.sizeFormatted || "N/A";
   }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted]);
 
@@ -60,10 +79,9 @@ const DetailsView = () => {
     setProgress(0);
     setProgressText("Preparing download...");
     setDownloadedFilePath(null);
-    console.log("Initializing download...");
 
     const qualityLabel = details.formats.find(
-      (f) => f.itag == selectedQuality
+      (f) => String(f.itag) === selectedQuality
     )?.quality;
 
     const options = {
@@ -76,7 +94,6 @@ const DetailsView = () => {
 
     const result = await window.electronAPI.downloadVideo(options);
     if (result.success) {
-      console.log("Success! File saved.");
       setDownloadedFilePath(result.path);
       await refreshHistory();
     } else {
@@ -91,127 +108,161 @@ const DetailsView = () => {
     window.electronAPI.cancelDownload();
     setIsDownloading(false);
     setProgress(0);
-    console.log("Download canceled by user.");
   };
 
   const handleThumbnailDownload = async () => {
-    console.log("Saving thumbnail...");
     const result = await window.electronAPI.downloadThumbnail({
       url: details.thumbnailUrl,
       title: details.title,
     });
-    if (result.success) {
-      console.log(`Thumbnail saved!`);
-    } else {
+    if (!result.success) {
       console.error(`Error: ${result.error}`);
     }
   };
 
   return (
-    <div className="details-view">
-      <button
-        className="view-title"
+    <div className="flex flex-col h-full">
+      {/* Back Button */}
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={goBackToHistory}
         disabled={isDownloading}
-        style={{
-          color: isDownloading ? "#8b949e" : "inherit",
-          cursor: isDownloading ? "not-allowed" : "pointer"
-        }}
+        className="self-start -ml-2 mb-4 gap-1.5 text-muted-foreground hover:text-foreground h-7 text-xs"
       >
-        &larr; BACK TO HISTORY
-      </button>
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back
+      </Button>
 
-      <div className="details-layout-container">
-        {/* Left Column */}
-        <div className="details-left-column">
-          <div className="details-top-content">
+      {/* Two-Column Layout */}
+      <div className="grid grid-cols-2 gap-6 flex-1 min-h-0">
+        {/* Left Column — Thumbnail, Controls, Download */}
+        <div className="flex flex-col min-w-0">
+          {/* Thumbnail with save overlay */}
+          <div className="relative rounded-lg overflow-hidden bg-secondary group">
             <img
               src={details.thumbnailUrl}
-              className="thumbnail"
+              className="w-full aspect-video object-cover"
               alt="Video Thumbnail"
             />
-
             <button
-              className="header-button show-in-folder-button"
+              className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 backdrop-blur-sm px-2 py-1 text-[10px] text-white/80 hover:text-white hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100 cursor-pointer border-none"
               onClick={handleThumbnailDownload}
               disabled={isDownloading}
             >
-              Download Thumbnail
+              <ImageDown className="h-3 w-3" />
+              Save
             </button>
-
-            <div className="details-controls">
-              <select
-                className="details-select"
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                disabled={isDownloading}
-              >
-                <option value="mp4">MP4 (Video)</option>
-                <option value="mp3">MP3 (Audio)</option>
-              </select>
-              <select
-                className="details-select"
-                value={selectedQuality}
-                onChange={(e) => setSelectedQuality(e.target.value)}
-                disabled={isDownloading || selectedType === "mp3"}
-              >
-                {details.formats.map((f) => (
-                  <option key={f.itag} value={f.itag}>
-                    {f.quality}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="download-actions">
-              {isDownloading ? (
-                <>
-                  <button className="header-button" disabled>Downloading...</button>
-                  <button className="header-button cancel-button" onClick={handleCancelDownload}>Cancel</button>
-                </>
-              ) : (
-                <div className="download-composite-button">
-                  <button className="download-main-button" onClick={handleDownload}>
-                    Download
-                  </button>
-                  <span className="download-size-indicator">{estimatedSize}</span>
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Bottom Status Area */}
-          <div className="status-area">
-            {isDownloading && (
-              <div className="progress-container">
-                <div className="progress-stage-row">
-                  <span className="progress-stage-label">{stageLabels[downloadStage] || 'Downloading...'}</span>
-                  <span className="progress-text">{progressText}</span>
-                </div>
-                <div className="progress-bar-container">
-                  <div
-                    className={`progress-bar${progress <= 0 ? ' indeterminate' : ''}`}
-                    style={progress > 0 ? { width: `${progress}%` } : {}}
-                  ></div>
+          {/* Controls section */}
+          <div className="flex flex-col gap-2.5 mt-4">
+            {/* Format & Quality — equal grid */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <Select
+                value={selectedType}
+                onValueChange={setSelectedType}
+                disabled={isDownloading}
+              >
+                <SelectTrigger className="h-9 bg-secondary/50 border-border/50 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mp4">MP4 (Video)</SelectItem>
+                  <SelectItem value="mp3">MP3 (Audio)</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={selectedQuality}
+                onValueChange={setSelectedQuality}
+                disabled={isDownloading || selectedType === "mp3"}
+              >
+                <SelectTrigger className="h-9 bg-secondary/50 border-border/50 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {details.formats.map((f) => (
+                    <SelectItem key={f.itag} value={String(f.itag)}>
+                      {f.quality}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Download & Size — equal grid, matching format/quality */}
+            {isDownloading ? (
+              <div className="grid grid-cols-[1fr,auto] gap-2.5">
+                <Button disabled className="gap-2 h-9">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Downloading...
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="h-9 w-full"
+                  onClick={handleCancelDownload}
+                >
+                  {/* <X className="h-4 w-4" /> */}
+                  Cancel
+                </Button>
+              </div>
+            ) : downloadedFilePath ? (
+              <Button
+                variant="outline"
+                className="w-full gap-2 h-9 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-300"
+                onClick={() => window.electronAPI.openFileLocation(downloadedFilePath)}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Show in Folder
+              </Button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5">
+                <Button className="gap-2 h-9" onClick={handleDownload}>
+                  <Download className="h-4 w-4" />
+                  Download
+                </Button>
+                <div className="flex items-center justify-center rounded-md border border-border/50 bg-secondary/40 text-xs text-muted-foreground font-medium h-9 gap-1.5">
+                  <HardDrive className="h-3.5 w-3.5 opacity-60" />
+                  {estimatedSize}
                 </div>
               </div>
             )}
-            {!isDownloading && downloadedFilePath && (
-              <button
-                className="header-button show-in-folder-button"
-                onClick={() => window.electronAPI.openFileLocation(downloadedFilePath)}
-              >
-                Show in Folder
-              </button>
-            )}
           </div>
+
+          {/* Progress Area (pushed to bottom) */}
+          {isDownloading && (
+            <div className="mt-auto pt-4">
+              <div className="rounded-lg border border-border/30 bg-secondary/30 p-3">
+                <div className="flex justify-between items-center gap-3 mb-2 min-w-0">
+                  <span className="text-xs font-medium text-foreground whitespace-nowrap">
+                    {stageLabels[downloadStage] || 'Downloading...'}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate min-w-0">
+                    {progressText}
+                  </span>
+                </div>
+                <Progress
+                  value={progress}
+                  indeterminate={progress <= 0}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Right Column */}
-        <div className="details-right-column">
-          <h3 className="video-title">{details.title}</h3>
-          <div className="description-wrapper">
-            <p className="video-description">{details.description}</p>
+        {/* Right Column — Title & Description */}
+        <div className="flex flex-col min-w-0 min-h-0">
+          <h3 className="text-base font-semibold leading-snug mb-3 truncate" title={details.title}>
+            {details.title}
+          </h3>
+          <div className="flex-1 overflow-y-auto rounded-lg bg-secondary/20 border border-border/20 min-h-0">
+            <div className="p-4">
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
+                {details.description || 'No description available.'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
