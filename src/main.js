@@ -1,10 +1,17 @@
+// Handle Windows Squirrel installer events (install/update/uninstall)
+// Must be at the very top before any other code runs
+if (require('electron-squirrel-startup')) app.quit();
+
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
-const { spawn, execSync } = require("child_process");
-const ffmpegPath = require('ffmpeg-static');
-const ffprobePath = require('ffprobe-static').path;
+const { spawn, execFile } = require("child_process");
+
+// Fix asar-packed paths: ffmpeg-static/ffprobe-static resolve inside .asar
+// which isn't executable. asarUnpack extracts them to .asar.unpacked.
+const fixAsar = (p) => p.replace('app.asar', 'app.asar.unpacked');
+const ffmpegPath = fixAsar(require('ffmpeg-static'));
 
 const _Store = require("electron-store");
 const Store = _Store.default || _Store;
@@ -22,19 +29,110 @@ const store = new Store();
 let mainWindow;
 let currentDownloadProcess = null;
 
-// Use the yt-dlp binary from the project root
-const ytDlpBinaryPath = path.join(app.getAppPath(), 'yt-dlp');
+// ---------------------------------------------------------------------------
+// Cross-platform yt-dlp binary resolution
+// ---------------------------------------------------------------------------
 
-// Ensure yt-dlp is executable
-if (fs.existsSync(ytDlpBinaryPath)) {
-  try {
-    fs.chmodSync(ytDlpBinaryPath, '755');
-    console.log('Using yt-dlp binary at:', ytDlpBinaryPath);
-  } catch (error) {
-    console.error('Failed to make yt-dlp executable:', error);
+/**
+ * Returns the platform-specific yt-dlp binary filename.
+ *   Windows → yt-dlp.exe
+ *   macOS   → yt-dlp_macos
+ *   Linux   → yt-dlp_linux
+ */
+function getBinaryName() {
+  switch (process.platform) {
+    case 'win32':  return 'yt-dlp.exe';
+    case 'darwin': return 'yt-dlp_macos';
+    case 'linux':  return 'yt-dlp_linux';
+    default:       return 'yt-dlp_linux'; // best guess
   }
-} else {
-  console.error('yt-dlp binary not found at:', ytDlpBinaryPath);
+}
+
+/**
+ * Where the bundled (read-only) binary lives inside the packaged app.
+ * In dev mode it sits at <projectRoot>/bin/; in production at resources/bin/.
+ */
+function getBundledBinaryPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'bin', getBinaryName());
+  }
+  return path.join(app.getAppPath(), 'bin', getBinaryName());
+}
+
+/**
+ * Writable location where the binary is copied so `yt-dlp -U` can self-update.
+ * Falls back to the bundled path in development.
+ */
+function getWritableBinaryPath() {
+  if (!app.isPackaged) return getBundledBinaryPath(); // dev mode — bin/ is already writable
+  return path.join(app.getPath('userData'), 'bin', getBinaryName());
+}
+
+/**
+ * Ensures the yt-dlp binary exists in the writable location.
+ * On first launch after install, copies from the bundled resource.
+ */
+function ensureYtDlpBinary() {
+  const writable = getWritableBinaryPath();
+  const bundled  = getBundledBinaryPath();
+
+  // In dev, just make sure the file exists in bin/
+  if (!app.isPackaged) {
+    if (!fs.existsSync(writable)) {
+      console.error('yt-dlp binary not found at:', writable);
+      console.error('Download it from https://github.com/yt-dlp/yt-dlp/releases and place it in bin/');
+      return writable;
+    }
+  } else {
+    // Production: copy from bundled resources to writable userData if missing
+    const dir = path.dirname(writable);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    if (!fs.existsSync(writable)) {
+      if (fs.existsSync(bundled)) {
+        fs.copyFileSync(bundled, writable);
+        console.log('Copied yt-dlp binary to writable location:', writable);
+      } else {
+        console.error('Bundled yt-dlp binary not found at:', bundled);
+      }
+    }
+  }
+
+  // Make executable on Unix systems (no-op concern on Windows)
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(writable, '755');
+    } catch (err) {
+      console.error('Failed to chmod yt-dlp binary:', err);
+    }
+  }
+
+  console.log('Using yt-dlp binary at:', writable);
+  return writable;
+}
+
+const ytDlpBinaryPath = ensureYtDlpBinary();
+
+/**
+ * Auto-update yt-dlp on app launch.
+ * Runs `yt-dlp -U` in the background. Because the binary lives in a writable
+ * directory (userData/bin/), it can replace itself in-place.
+ */
+function updateYtDlp() {
+  // Don't update while a download is active
+  if (currentDownloadProcess) {
+    console.log('Skipping yt-dlp update — download in progress');
+    return;
+  }
+  console.log('Checking for yt-dlp updates...');
+  execFile(ytDlpBinaryPath, ['-U'], (err, stdout, stderr) => {
+    if (err) {
+      console.log('yt-dlp update check failed (non-critical):', err.message);
+      return;
+    }
+    if (stdout) console.log('yt-dlp update:', stdout.trim());
+    if (stderr) console.log('yt-dlp update stderr:', stderr.trim());
+  });
 }
 
 function createWindow() {
@@ -57,7 +155,11 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  // Non-blocking: check for yt-dlp updates after the window is ready
+  updateYtDlp();
+});
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
@@ -144,34 +246,52 @@ ipcMain.handle("get-video-info", async (event, url) => {
     const info = JSON.parse(stdout);
     console.log('Total formats available:', info.formats.length);
 
+    // Debug: log raw format dimensions to help diagnose issues
+    info.formats.forEach(f => {
+      if (f.vcodec && f.vcodec !== 'none') {
+        console.log(`  fmt ${f.format_id}: ${f.width}x${f.height} vcodec=${f.vcodec} acodec=${f.acodec} size=${f.filesize || f.filesize_approx || '?'}`);
+      }
+    });
+
     // Build quality list from ALL video formats (adaptive + muxed).
     // Priority: adaptive H.264 > adaptive VP9 > muxed H.264 > muxed VP9.
     // AV1 is always skipped — poor app compatibility.
     const heightMap = {};
     info.formats.forEach(f => {
-      if (!f.height || f.height < 360) return;
+      const rawH = f.height || 0;
+      const rawW = f.width || 0;
+
+      // Use the shorter dimension as the display quality (handles portrait/vertical videos)
+      // e.g. a vertical 1080p video is 1080×1920 → display as "1080p", not "1920p"
+      const displayH = (rawW > 0 && rawH > 0) ? Math.min(rawW, rawH) : rawH;
+
+      if (!displayH || displayH < 240) return;
       if (!f.vcodec || f.vcodec === 'none') return;
       if (f.vcodec.startsWith('av01')) return; // skip AV1
-      const h = f.height;
+
       const size = f.filesize || f.filesize_approx || 0;
       const fps = f.fps || 30;
       const isAdaptive = f.acodec === 'none';
       const isH264 = f.vcodec.startsWith('avc') || f.vcodec === 'h264';
-      const key = `${h}_${fps > 30 ? fps : 30}`;
+      const key = `${displayH}_${fps > 30 ? fps : 30}`;
       // Score: adaptive = 2 pts, H.264 = 1 pt — higher score wins
       const score = (isAdaptive ? 2 : 0) + (isH264 ? 1 : 0);
       const cur = heightMap[key];
       const curScore = cur ? (cur.isAdaptive ? 2 : 0) + (cur.isH264 ? 1 : 0) : -1;
       if (score > curScore || (score === curScore && size > (cur?.size || 0))) {
-        heightMap[key] = { height: h, fps, size, isAdaptive, isH264 };
+        heightMap[key] = {
+          displayHeight: displayH,   // shorter dimension — for UI label
+          ytdlpHeight: rawH,         // actual yt-dlp height — for format filter
+          fps, size, isAdaptive, isH264,
+        };
       }
     });
 
     const uniqueFormats = Object.values(heightMap)
       .map(f => ({
-        itag: `${f.height}`,      // height string used as identifier
-        quality: `${f.height}p${f.fps > 30 ? f.fps : ''}${f.isH264 ? '' : ' (VP9)'}`,
-        height: f.height,
+        itag: `${f.ytdlpHeight}`,   // actual yt-dlp height, used in download format arg
+        quality: `${f.displayHeight}p${f.fps > 30 ? f.fps : ''}${f.isH264 ? '' : ' (VP9)'}`,
+        height: f.displayHeight,
         size: f.size,
         sizeFormatted: f.size > 0 ? formatBytes(f.size) : 'N/A',
         isH264: f.isH264,
@@ -246,7 +366,12 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         cancel: () => {
             isCancelled = true;
             if (ytDlpProcess) {
-                ytDlpProcess.kill(); // SIGTERM by default
+                // Windows doesn't support SIGTERM — use taskkill for reliable termination
+                if (process.platform === 'win32') {
+                    spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
+                } else {
+                    ytDlpProcess.kill('SIGTERM');
+                }
             }
         }
     };
@@ -264,10 +389,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           formatArg =
             `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
             `bestvideo[height=${h}][vcodec^=avc]+bestaudio/` +
-            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
-            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio/` +
             `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
             `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
+            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
+            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio/` +
             `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
             `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
         } else {
@@ -303,10 +428,12 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       ytDlpProcess = spawn(ytDlpBinaryPath, args);
 
       // Send an initial "started" event so the UI shows activity immediately
-      mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0 });
+      mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
 
       let lastPercent = -1;
       let stdoutBuf = '';
+      let downloadStage = 'starting'; // 'starting' | 'video' | 'audio' | 'merging' | 'processing'
+      let stageCount = 0; // tracks how many [download] Destination lines we've seen
 
       ytDlpProcess.stdout.on('data', (chunk) => {
         stdoutBuf += chunk.toString();
@@ -315,6 +442,25 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         lines.forEach((line) => {
           if (!line.trim()) return;
           console.log('yt-dlp:', line);
+
+          // Detect stage transitions from yt-dlp output
+          if (line.includes('[download] Destination:')) {
+            stageCount++;
+            if (type === 'mp3') {
+              downloadStage = 'audio';
+            } else {
+              // For video downloads: first Destination = video stream, second = audio stream
+              downloadStage = stageCount === 1 ? 'video' : 'audio';
+            }
+            lastPercent = -1; // reset so progress restarts for new stream
+          } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
+            downloadStage = 'merging';
+            mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
+          } else if (line.includes('[ExtractAudio]') || line.includes('[FFmpegMetadata]')) {
+            downloadStage = 'processing';
+            mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
+          }
+
           // yt-dlp progress line looks like: [download]  12.3% of   54.23MiB at  3.10MiB/s ETA 00:15
           const downloadMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGTi]+B)/i);
           let percentValue = null;
@@ -335,7 +481,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
           if (percentValue !== null && percentValue !== lastPercent) {
             lastPercent = percentValue;
-            mainWindow.webContents.send('download-progress', { percent: percentValue, downloadedBytes, totalBytes });
+            mainWindow.webContents.send('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
           }
         });
       });
@@ -366,6 +512,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
         percent: 100,
         downloadedBytes: finalSize,
         totalBytes: finalSize,
+        stage: 'done',
       });
 
         // Add to history

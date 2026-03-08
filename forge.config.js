@@ -1,12 +1,21 @@
 module.exports = {
   packagerConfig: {
     asar: true,
+    // Extract native binaries from asar so they remain executable
+    asarUnpack: [
+      '**/node_modules/ffmpeg-static/**',
+      '**/node_modules/ffprobe-static/**',
+    ],
+    // Ship the bin/ folder alongside the asar (accessible via process.resourcesPath)
+    extraResource: ['./bin'],
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        name: 'YT-FORGE',
+      },
     },
     {
       name: '@electron-forge/maker-zip',
@@ -14,11 +23,23 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-deb',
-      config: {},
+      config: {
+        options: {
+          name: 'yt-forge',
+          categories: ['AudioVideo'],
+          description: 'A desktop YouTube video downloader powered by yt-dlp',
+        },
+      },
     },
     {
       name: '@electron-forge/maker-rpm',
-      config: {},
+      config: {
+        options: {
+          name: 'yt-forge',
+          categories: ['AudioVideo'],
+          description: 'A desktop YouTube video downloader powered by yt-dlp',
+        },
+      },
     },
   ],
   plugins: [

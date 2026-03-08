@@ -18,6 +18,7 @@ const DetailsView = () => {
   const [selectedType, setSelectedType] = useState("mp4");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
+  const [downloadStage, setDownloadStage] = useState('starting');
   const [downloadedFilePath, setDownloadedFilePath] = useState(null);
 
   const estimatedSize = useMemo(() => {
@@ -28,10 +29,22 @@ const DetailsView = () => {
     return format?.sizeFormatted || "N/A";
   }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted]);
 
+  const stageLabels = {
+    starting: 'Preparing download...',
+    video: 'Downloading video...',
+    audio: 'Downloading audio...',
+    merging: 'Merging video & audio...',
+    processing: 'Processing audio...',
+    done: 'Complete!',
+  };
+
   useEffect(() => {
-    const listener = ({ percent = 0, downloadedBytes = 0, totalBytes = 0 }) => {
+    const listener = ({ percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting' }) => {
       setProgress(percent);
-      if (totalBytes > 0) {
+      setDownloadStage(stage);
+      if (stage === 'merging' || stage === 'processing') {
+        setProgressText(stageLabels[stage]);
+      } else if (totalBytes > 0) {
         setProgressText(`${percent.toFixed(1)}% — ${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`);
       } else if (percent > 0) {
         setProgressText(`${percent.toFixed(1)}%`);
@@ -171,10 +184,13 @@ const DetailsView = () => {
           <div className="status-area">
             {isDownloading && (
               <div className="progress-container">
-                <p className="progress-text">{progressText}</p>
+                <div className="progress-stage-row">
+                  <span className="progress-stage-label">{stageLabels[downloadStage] || 'Downloading...'}</span>
+                  <span className="progress-text">{progressText}</span>
+                </div>
                 <div className="progress-bar-container">
                   <div
-                    className={`progress-bar${progress === 0 ? ' indeterminate' : ''}`}
+                    className={`progress-bar${progress <= 0 ? ' indeterminate' : ''}`}
                     style={progress > 0 ? { width: `${progress}%` } : {}}
                   ></div>
                 </div>

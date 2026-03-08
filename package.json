@@ -1,13 +1,16 @@
 {
-  "name": "electron-react",
-  "productName": "electron-react",
+  "name": "yt-forge",
+  "productName": "YT-FORGE",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "A desktop YouTube video downloader powered by yt-dlp",
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
+    "make:win": "electron-forge make --platform=win32",
+    "make:mac": "electron-forge make --platform=darwin",
+    "make:linux": "electron-forge make --platform=linux",
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\""
   },
@@ -29,16 +32,13 @@
     "vite": "^5.4.19"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "@vitejs/plugin-react": "^4.5.2",
-    "cookie-parser": "^1.4.7",
     "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^10.1.0",
     "ffmpeg-static": "^5.2.0",
     "ffprobe-static": "^3.1.0",
     "lucide-react": "^0.542.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "yt-dlp-wrap": "^2.3.12"
+    "react-dom": "^19.1.0"
   }
 }
