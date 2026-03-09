@@ -103,7 +103,7 @@ const HistoryView = () => {
               </div>
             ))
           ) : (
-            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center h-100 text-muted-foreground">
               <p className="text-sm">Your download history will appear here.</p>
             </div>
           )}

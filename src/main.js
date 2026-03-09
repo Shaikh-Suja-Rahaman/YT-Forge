@@ -17,12 +17,12 @@ const _Store = require("electron-store");
 const Store = _Store.default || _Store;
 
 // Base yt-dlp flags shared by info fetch and download
-// (no --extractor-args: let yt-dlp use its defaults, which return all 40+ adaptive formats)
 const BASE_ARGS = [
   '--no-playlist',
   '--ignore-config',
   '--retries', '5',
   '--retry-sleep', '3',
+  '--js-runtimes', 'default,node,bun',  // enable Node/Bun as JS runtimes alongside deno
 ];
 
 const store = new Store();
