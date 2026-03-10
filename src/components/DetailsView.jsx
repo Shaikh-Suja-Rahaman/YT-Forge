@@ -20,6 +20,9 @@ import {
   HardDrive,
   CheckCircle2,
   Info,
+  Pause,
+  Play,
+  WifiOff,
 } from 'lucide-react';
 
 const DetailsView = () => {
@@ -40,6 +43,8 @@ const DetailsView = () => {
   const [progressText, setProgressText] = useState("");
   const [downloadStage, setDownloadStage] = useState('starting');
   const [downloadedFilePath, setDownloadedFilePath] = useState(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseReason, setPauseReason] = useState(null); // null | 'user' | 'network'
 
   const isVP9 = useMemo(() => {
     if (selectedType === 'mp3') return false;
@@ -65,7 +70,16 @@ const DetailsView = () => {
   };
 
   useEffect(() => {
-    const listener = ({ percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting' }) => {
+    const listener = (data) => {
+      // Handle pause/resume status events
+      if (data.paused !== undefined) {
+        setIsPaused(data.paused);
+        setPauseReason(data.reason || null);
+        if (data.stage) setDownloadStage(data.stage);
+        return;
+      }
+
+      const { percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting' } = data;
       setProgress(percent);
       setDownloadStage(stage);
       if (stage === 'merging' || stage === 'processing') {
@@ -114,7 +128,17 @@ const DetailsView = () => {
   const handleCancelDownload = () => {
     window.electronAPI.cancelDownload();
     setIsDownloading(false);
+    setIsPaused(false);
+    setPauseReason(null);
     setProgress(0);
+  };
+
+  const handlePauseDownload = () => {
+    window.electronAPI.pauseDownload();
+  };
+
+  const handleResumeDownload = () => {
+    window.electronAPI.resumeDownload();
   };
 
   const handleThumbnailDownload = async () => {
@@ -210,20 +234,46 @@ const DetailsView = () => {
 
             {/* Download & Size — equal grid, matching format/quality */}
             {isDownloading ? (
-              <div className="grid grid-cols-[1fr,auto] gap-2.5">
-                <Button disabled className="gap-2 h-9">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Downloading...
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  className="h-9 w-full"
-                  onClick={handleCancelDownload}
-                >
-                  {/* <X className="h-4 w-4" /> */}
-                  Cancel
-                </Button>
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[1fr,auto] gap-2.5">
+                  {isPaused && pauseReason !== 'network' ? (
+                    <Button className="gap-2 h-9" onClick={handleResumeDownload}>
+                      <Play className="h-4 w-4" />
+                      Resume
+                    </Button>
+                  ) : !isPaused ? (
+                    <Button
+                      variant="secondary"
+                      className="gap-2 h-9"
+                      onClick={handlePauseDownload}
+                      disabled={downloadStage === 'merging' || downloadStage === 'processing'}
+                    >
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button disabled className="gap-2 h-9">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Waiting...
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    className="h-9 px-4"
+                    onClick={handleCancelDownload}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                {/* Network-paused info badge */}
+                {isPaused && pauseReason === 'network' && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/15">
+                    <WifiOff className="h-3 w-3 text-amber-500/70 shrink-0" />
+                    <p className="text-[11px] leading-snug text-amber-500/70">
+                      No internet — will resume automatically
+                    </p>
+                  </div>
+                )}
               </div>
             ) : downloadedFilePath ? (
               <Button
@@ -251,10 +301,20 @@ const DetailsView = () => {
           {/* Progress Area (pushed to bottom) */}
           {isDownloading && (
             <div className="mt-auto pt-4">
-              <div className="rounded-lg border border-border/30 bg-secondary/30 p-3">
+              <div className={`rounded-lg border p-3 ${
+                isPaused
+                  ? 'border-amber-500/20 bg-amber-500/5'
+                  : 'border-border/30 bg-secondary/30'
+              }`}>
                 <div className="flex justify-between items-center gap-3 mb-2 min-w-0">
-                  <span className="text-xs font-medium text-foreground whitespace-nowrap">
-                    {stageLabels[downloadStage] || 'Downloading...'}
+                  <span className={`text-xs font-medium whitespace-nowrap ${
+                    isPaused ? 'text-amber-400' : 'text-foreground'
+                  }`}>
+                    {isPaused
+                      ? pauseReason === 'network'
+                        ? 'Waiting for connection...'
+                        : 'Paused'
+                      : stageLabels[downloadStage] || 'Downloading...'}
                   </span>
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate min-w-0">
                     {progressText}
@@ -262,7 +322,8 @@ const DetailsView = () => {
                 </div>
                 <Progress
                   value={progress}
-                  indeterminate={progress <= 0}
+                  indeterminate={progress <= 0 && !isPaused}
+                  paused={isPaused}
                 />
               </div>
             </div>

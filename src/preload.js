@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openFileLocation: (filePath) => ipcRenderer.invoke("open-file-location", filePath),
   openExternalLink: (url) => ipcRenderer.invoke("open-external-link", url),
   cancelDownload: () => ipcRenderer.send("cancel-download"),
+  pauseDownload: () => ipcRenderer.send("pause-download"),
+  resumeDownload: () => ipcRenderer.send("resume-download"),
   onDownloadProgress: (callback) => {
     // Remove any previous listener before adding a new one to prevent stacking
     ipcRenderer.removeAllListeners('download-progress');

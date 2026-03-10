@@ -99,6 +99,20 @@
   animation: progressIndeterminate 1.2s ease-in-out infinite;
 }
 
+/* Paused state — amber bar with subtle pulse */
+.progress-paused {
+  background: oklch(0.45 0.11 75 / 0.2);
+}
+
+@keyframes progressPausedPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.progress-paused > [data-state] {
+  animation: progressPausedPulse 2s ease-in-out infinite;
+}
+
 /* --- ShadCN Accordion keyframes --- */
 @keyframes accordion-down {
   from {

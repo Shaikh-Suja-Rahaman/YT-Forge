@@ -3,18 +3,22 @@ import * as ProgressPrimitive from "@radix-ui/react-progress";
 import { cn } from "@/lib/utils";
 
 const Progress = React.forwardRef(
-  ({ className, value, indeterminate = false, ...props }, ref) => (
+  ({ className, value, indeterminate = false, paused = false, ...props }, ref) => (
     <ProgressPrimitive.Root
       ref={ref}
       className={cn(
         "relative h-1.5 w-full overflow-hidden rounded-full bg-primary/20",
-        indeterminate && "progress-indeterminate",
+        indeterminate && !paused && "progress-indeterminate",
+        paused && "progress-paused",
         className
       )}
       {...props}
     >
       <ProgressPrimitive.Indicator
-        className="h-full w-full flex-1 bg-primary rounded-full transition-all duration-400 ease-in-out"
+        className={cn(
+          "h-full w-full flex-1 rounded-full transition-all duration-400 ease-in-out",
+          paused ? "bg-amber-500" : "bg-primary"
+        )}
         style={
           indeterminate ? {} : { transform: `translateX(-${100 - (value || 0)}%)` }
         }

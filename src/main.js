@@ -2,7 +2,7 @@
 // Must be at the very top before any other code runs
 if (require('electron-squirrel-startup')) app.quit();
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -28,8 +28,9 @@ const Store = _Store.default || _Store;
 const BASE_ARGS = [
   '--no-playlist',
   '--ignore-config',
-  '--retries', '5',
+  '--retries', '10',
   '--retry-sleep', '3',
+  '--fragment-retries', '10',
   '--js-runtimes', 'default,node,bun',  // enable Node/Bun as JS runtimes alongside deno
 ];
 
@@ -37,6 +38,8 @@ const store = new Store();
 let mainWindow;
 let currentDownloadProcess = null;
 let isUpdatingYtDlp = false;
+let networkCheckInterval = null;
+let wasOnline = true;
 
 // ---------------------------------------------------------------------------
 // Cross-platform yt-dlp binary resolution
@@ -182,13 +185,45 @@ function createWindow() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Network monitoring — auto-pause/resume downloads on connectivity changes
+// ---------------------------------------------------------------------------
+function startNetworkMonitoring() {
+  if (networkCheckInterval) return;
+  wasOnline = net.isOnline();
+  networkCheckInterval = setInterval(() => {
+    const online = net.isOnline();
+    if (online === wasOnline) return;
+    wasOnline = online;
+    if (!online && currentDownloadProcess && !currentDownloadProcess.isPaused) {
+      // Lost connectivity — auto-pause to prevent yt-dlp from burning retries
+      currentDownloadProcess.pause('network');
+    } else if (online && currentDownloadProcess && currentDownloadProcess.isPaused && currentDownloadProcess.pauseReason === 'network') {
+      // Back online — auto-resume only network-paused downloads (respect user pauses)
+      currentDownloadProcess.resume();
+    }
+  }, 3000);
+}
+
 app.whenReady().then(() => {
   createWindow();
   // Non-blocking: check for yt-dlp updates after the window is ready
   updateYtDlp();
+  startNetworkMonitoring();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// Clean up paused downloads on quit — a SIGSTOPped process can't handle SIGTERM
+app.on('before-quit', () => {
+  if (currentDownloadProcess) {
+    currentDownloadProcess.cancel();
+  }
+  if (networkCheckInterval) {
+    clearInterval(networkCheckInterval);
+    networkCheckInterval = null;
+  }
 });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -250,6 +285,18 @@ ipcMain.handle("open-external-link", (event, url) => shell.openExternal(url));
 ipcMain.on("cancel-download", () => {
     if (currentDownloadProcess && typeof currentDownloadProcess.cancel === 'function') {
         currentDownloadProcess.cancel();
+    }
+});
+
+ipcMain.on("pause-download", () => {
+    if (currentDownloadProcess && typeof currentDownloadProcess.pause === 'function') {
+        currentDownloadProcess.pause();
+    }
+});
+
+ipcMain.on("resume-download", () => {
+    if (currentDownloadProcess && typeof currentDownloadProcess.resume === 'function') {
+        currentDownloadProcess.resume();
     }
 });
 
@@ -399,20 +446,70 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     }
 
     let isCancelled = false;
+    let isPaused = false;
+    let pauseReason = null;       // null | 'user' | 'network'
     let ytDlpProcess = null;
+    let downloadStage = 'starting';
 
     currentDownloadProcess = {
         cancel: () => {
             isCancelled = true;
             if (ytDlpProcess) {
-                // Windows doesn't support SIGTERM — use taskkill for reliable termination
+                // If paused (SIGSTOP), resume the process group first so it can receive SIGTERM
+                if (isPaused && process.platform !== 'win32') {
+                    try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
+                }
                 if (process.platform === 'win32') {
                     spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
                 } else {
-                    ytDlpProcess.kill('SIGTERM');
+                    // Kill the entire process group
+                    try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
+                        ytDlpProcess.kill('SIGTERM');
+                    }
                 }
             }
-        }
+            isPaused = false;
+            pauseReason = null;
+        },
+        pause: (reason = 'user') => {
+            if (isPaused || !ytDlpProcess || isCancelled) return;
+            // Don't allow pausing during merging/processing (local ffmpeg ops)
+            if (downloadStage === 'merging' || downloadStage === 'processing') return;
+            isPaused = true;
+            pauseReason = reason;
+            if (process.platform !== 'win32') {
+                try {
+                    // Send SIGSTOP to the entire process group (negative PID)
+                    process.kill(-ytDlpProcess.pid, 'SIGSTOP');
+                    console.log(`SIGSTOP sent to process group -${ytDlpProcess.pid}`);
+                } catch (e) {
+                    console.error('SIGSTOP failed:', e.message);
+                    // Fallback: try sending to just the process
+                    try { ytDlpProcess.kill('SIGSTOP'); } catch (e2) { console.error('SIGSTOP fallback also failed:', e2.message); }
+                }
+            }
+            console.log(`Download paused (${reason})`);
+            mainWindow.webContents.send('download-progress', { paused: true, reason, stage: downloadStage });
+        },
+        resume: () => {
+            if (!isPaused || !ytDlpProcess || isCancelled) return;
+            isPaused = false;
+            pauseReason = null;
+            if (process.platform !== 'win32') {
+                try {
+                    process.kill(-ytDlpProcess.pid, 'SIGCONT');
+                    console.log(`SIGCONT sent to process group -${ytDlpProcess.pid}`);
+                } catch (e) {
+                    console.error('SIGCONT failed:', e.message);
+                    try { ytDlpProcess.kill('SIGCONT'); } catch (e2) { console.error('SIGCONT fallback also failed:', e2.message); }
+                }
+            }
+            console.log('Download resumed');
+            mainWindow.webContents.send('download-progress', { paused: false, reason: null, stage: downloadStage });
+        },
+        get isPaused() { return isPaused; },
+        get pauseReason() { return pauseReason; },
+        get stage() { return downloadStage; },
     };
 
     try {
@@ -463,15 +560,15 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
       console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
 
-      // Use spawn directly so we get raw stdout/stderr streams for progress parsing
-      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv() });
+      // Spawn in its own process group (detached) so SIGSTOP/SIGCONT
+      // can freeze/resume the entire group via negative PID
+      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
 
       // Send an initial "started" event so the UI shows activity immediately
       mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
 
       let lastPercent = -1;
       let stdoutBuf = '';
-      let downloadStage = 'starting'; // 'starting' | 'video' | 'audio' | 'merging' | 'processing'
       let stageCount = 0; // tracks how many [download] Destination lines we've seen
 
       ytDlpProcess.stdout.on('data', (chunk) => {
@@ -482,23 +579,25 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           if (!line.trim()) return;
           console.log('yt-dlp:', line);
 
-          // Detect stage transitions from yt-dlp output
+          // Detect stage transitions even while paused (so we track state correctly)
           if (line.includes('[download] Destination:')) {
             stageCount++;
             if (type === 'mp3') {
               downloadStage = 'audio';
             } else {
-              // For video downloads: first Destination = video stream, second = audio stream
               downloadStage = stageCount === 1 ? 'video' : 'audio';
             }
-            lastPercent = -1; // reset so progress restarts for new stream
+            lastPercent = -1;
           } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
             downloadStage = 'merging';
-            mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
+            if (!isPaused) mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
           } else if (line.includes('[ExtractAudio]') || line.includes('[FFmpegMetadata]')) {
             downloadStage = 'processing';
-            mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
+            if (!isPaused) mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
           }
+
+          // Don't send progress events while paused — pipe buffer may still drain
+          if (isPaused) return;
 
           // yt-dlp progress line looks like: [download]  12.3% of   54.23MiB at  3.10MiB/s ETA 00:15
           const downloadMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGTi]+B)/i);
