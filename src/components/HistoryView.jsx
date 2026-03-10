@@ -13,7 +13,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Trash2, FolderOpen } from 'lucide-react';
+import { Trash2, FolderOpen, X } from 'lucide-react';
 
 const HistoryView = () => {
   const { history, setHistory } = useAppContext();
@@ -21,6 +21,11 @@ const HistoryView = () => {
   const handleClearHistory = async () => {
     await window.electronAPI.clearHistory();
     setHistory([]);
+  };
+
+  const handleDeleteItem = async (timestamp) => {
+    const updated = await window.electronAPI.deleteHistoryItem(timestamp);
+    setHistory(updated);
   };
 
   return (
@@ -100,6 +105,40 @@ const HistoryView = () => {
                     Show in Folder
                   </TooltipContent>
                 </Tooltip>
+
+                {/* Delete single item button */}
+                <AlertDialog>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground/50 hover:text-destructive-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Remove
+                    </TooltipContent>
+                  </Tooltip>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove from history?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This item will be deleted from the download history. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleDeleteItem(item.timestamp)} className="bg-destructive text-destructive-foreground hover:bg-destructive/80">
+                        Remove
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ))
           ) : (

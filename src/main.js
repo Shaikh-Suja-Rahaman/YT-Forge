@@ -195,6 +195,12 @@ const sizeToBytes = (value, unit) => {
 
 ipcMain.handle("get-history", () => store.get('downloadHistory', []));
 ipcMain.handle("clear-history", () => store.set('downloadHistory', []));
+ipcMain.handle("delete-history-item", (event, timestamp) => {
+  const history = store.get('downloadHistory', []);
+  const updated = history.filter(item => item.timestamp !== timestamp);
+  store.set('downloadHistory', updated);
+  return updated;
+});
 
 // --- MODIFIED SECTION START ---
 ipcMain.handle("open-file-location", (event, filePath) => {
