@@ -16,6 +16,7 @@ export const AppProvider = ({ children }) => {
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
 
   // Fetch history on mount
   useEffect(() => {
@@ -28,12 +29,16 @@ export const AppProvider = ({ children }) => {
 
   const handleUrlChange = (newUrl) => {
     setUrl(newUrl);
-    if (!newUrl.trim()) setVideoDetails(null);
+    if (!newUrl.trim()) {
+      setVideoDetails(null);
+      setFetchError(null);
+    }
   };
 
   const handleFetchDetails = async () => {
     if (!url || isDownloading) return;
     setIsLoading(true);
+    setFetchError(null);
     console.log("Fetching details...");
     try {
       const result = await window.electronAPI.getVideoInfo(url);
@@ -42,10 +47,12 @@ export const AppProvider = ({ children }) => {
       } else {
         console.error(`Error: ${result.error}`);
         setVideoDetails(null);
+        setFetchError(result.error);
       }
     } catch (error) {
       console.error("Failed to fetch video details:", error);
       setVideoDetails(null);
+      setFetchError(error.message || 'Something went wrong');
     } finally {
       setIsLoading(false);
     }
@@ -54,6 +61,7 @@ export const AppProvider = ({ children }) => {
   const goBackToHistory = () => {
     setUrl("");
     setVideoDetails(null);
+    setFetchError(null);
   };
 
   const refreshHistory = async () => {
@@ -67,6 +75,7 @@ export const AppProvider = ({ children }) => {
     history,
     isLoading,
     isDownloading,
+    fetchError,
     setUrl,
     setVideoDetails,
     setHistory,
