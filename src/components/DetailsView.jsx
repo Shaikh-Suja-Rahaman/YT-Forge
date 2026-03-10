@@ -19,6 +19,7 @@ import {
   X,
   HardDrive,
   CheckCircle2,
+  Info,
 } from 'lucide-react';
 
 const DetailsView = () => {
@@ -39,6 +40,12 @@ const DetailsView = () => {
   const [progressText, setProgressText] = useState("");
   const [downloadStage, setDownloadStage] = useState('starting');
   const [downloadedFilePath, setDownloadedFilePath] = useState(null);
+
+  const isVP9 = useMemo(() => {
+    if (selectedType === 'mp3') return false;
+    const format = details.formats.find(f => String(f.itag) === selectedQuality);
+    return format ? !format.isH264 : false;
+  }, [selectedQuality, selectedType, details.formats]);
 
   const estimatedSize = useMemo(() => {
     if (selectedType === 'mp3') {
@@ -190,6 +197,16 @@ const DetailsView = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* VP9 compatibility note */}
+            {isVP9 && !isDownloading && (
+              <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/15">
+                <Info className="h-3 w-3 text-amber-500/70 mt-0.5 shrink-0" />
+                <p className="text-[11px] leading-snug text-amber-500/70">
+                  VP9 may not be supported by some editors <span className="text-amber-500/50">(Premiere Pro, Final Cut)</span> and older players.
+                </p>
+              </div>
+            )}
 
             {/* Download & Size — equal grid, matching format/quality */}
             {isDownloading ? (

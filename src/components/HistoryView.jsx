@@ -89,56 +89,59 @@ const HistoryView = () => {
                   </span>
                 </div>
 
-                {/* Folder button — always visible, with tooltip */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground/50 hover:text-foreground"
-                      onClick={() => window.electronAPI.openFileLocation(item.path)}
-                    >
-                      <FolderOpen className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Show in Folder
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Delete single item button */}
-                <AlertDialog>
+                {/* Action buttons */}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {/* Folder button */}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-muted-foreground/50 hover:text-destructive-foreground"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-foreground"
+                        onClick={() => window.electronAPI.openFileLocation(item.path)}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
-                      Remove
+                      Show in Folder
                     </TooltipContent>
                   </Tooltip>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Remove from history?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This item will be deleted from the download history. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => handleDeleteItem(item.timestamp)} className="bg-destructive text-destructive-foreground hover:bg-destructive/80">
+
+                  {/* Delete single item button */}
+                  <AlertDialog>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive-foreground"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
                         Remove
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                      </TooltipContent>
+                    </Tooltip>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove from history?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This item will be deleted from the download history. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteItem(item.timestamp)} className="bg-destructive text-destructive-foreground hover:bg-destructive/80">
+                          Remove
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
             ))
           ) : (
