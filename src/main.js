@@ -12,6 +12,14 @@ const { spawn, execFile } = require("child_process");
 // which isn't executable. asarUnpack extracts them to .asar.unpacked.
 const fixAsar = (p) => p.replace('app.asar', 'app.asar.unpacked');
 const ffmpegPath = fixAsar(require('ffmpeg-static'));
+const ffprobePath = fixAsar(require('ffprobe-static').path);
+
+// Build env with ffmpeg+ffprobe directories on PATH so yt-dlp can find both
+function getYtDlpEnv() {
+  const dirs = new Set([path.dirname(ffmpegPath), path.dirname(ffprobePath)]);
+  const extraPath = [...dirs].join(path.delimiter);
+  return { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}` };
+}
 
 const _Store = require("electron-store");
 const Store = _Store.default || _Store;
@@ -28,6 +36,7 @@ const BASE_ARGS = [
 const store = new Store();
 let mainWindow;
 let currentDownloadProcess = null;
+let isUpdatingYtDlp = false;
 
 // ---------------------------------------------------------------------------
 // Cross-platform yt-dlp binary resolution
@@ -124,14 +133,32 @@ function updateYtDlp() {
     console.log('Skipping yt-dlp update — download in progress');
     return;
   }
+  isUpdatingYtDlp = true;
   console.log('Checking for yt-dlp updates...');
   execFile(ytDlpBinaryPath, ['-U'], (err, stdout, stderr) => {
+    isUpdatingYtDlp = false;
     if (err) {
       console.log('yt-dlp update check failed (non-critical):', err.message);
       return;
     }
     if (stdout) console.log('yt-dlp update:', stdout.trim());
     if (stderr) console.log('yt-dlp update stderr:', stderr.trim());
+
+    // After a successful update, re-apply executable permissions on Unix
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(ytDlpBinaryPath, '755');
+      } catch (chmodErr) {
+        console.error('Failed to chmod yt-dlp after update:', chmodErr);
+      }
+    }
+
+    // On macOS, clear quarantine flag so Gatekeeper doesn't block the updated binary
+    if (process.platform === 'darwin') {
+      execFile('xattr', ['-dr', 'com.apple.quarantine', ytDlpBinaryPath], (xattrErr) => {
+        if (xattrErr) console.log('xattr quarantine clear (non-critical):', xattrErr.message);
+      });
+    }
   });
 }
 
@@ -227,6 +254,9 @@ ipcMain.on("cancel-download", () => {
 });
 
 ipcMain.handle("get-video-info", async (event, url) => {
+  if (isUpdatingYtDlp) {
+    return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
+  }
   try {
     console.log('Fetching video info for:', url);
 
@@ -237,7 +267,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
         url,
         '--dump-json',
         ...BASE_ARGS,
-      ]);
+      ], { env: getYtDlpEnv() });
       let out = '';
       let err = '';
       proc.stdout.on('data', d => { out += d.toString(); });
@@ -345,6 +375,9 @@ ipcMain.handle("download-thumbnail", async (event, { url, title }) => {
 });
 
 ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl }) => {
+    if (isUpdatingYtDlp) {
+      return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
+    }
     const safeTitle = title.replace(/[\\/:"*?<>|]/g, '');
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: `Save ${type.toUpperCase()}`,
@@ -431,7 +464,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
 
       // Use spawn directly so we get raw stdout/stderr streams for progress parsing
-      ytDlpProcess = spawn(ytDlpBinaryPath, args);
+      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv() });
 
       // Send an initial "started" event so the UI shows activity immediately
       mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
