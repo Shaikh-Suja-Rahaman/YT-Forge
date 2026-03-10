@@ -17,4 +17,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners('download-progress');
     ipcRenderer.on('download-progress', (_event, value) => callback(value));
   },
+  onYtDlpUpdateStatus: (callback) => {
+    ipcRenderer.removeAllListeners('ytdlp-update-status');
+    ipcRenderer.on('ytdlp-update-status', (_event, value) => callback(value));
+  },
 });

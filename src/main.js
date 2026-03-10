@@ -125,6 +125,13 @@ function ensureYtDlpBinary() {
 
 const ytDlpBinaryPath = ensureYtDlpBinary();
 
+/** Safe send — guard against destroyed window (e.g. app quit during async callback) */
+function safeSend(channel, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, data);
+  }
+}
+
 /**
  * Auto-update yt-dlp on app launch.
  * Runs `yt-dlp -U` in the background. Because the binary lives in a writable
@@ -138,8 +145,11 @@ function updateYtDlp() {
   }
   isUpdatingYtDlp = true;
   console.log('Checking for yt-dlp updates...');
+  safeSend('ytdlp-update-status', { updating: true });
   execFile(ytDlpBinaryPath, ['-U'], (err, stdout, stderr) => {
     isUpdatingYtDlp = false;
+    const updated = stdout && stdout.includes('Updated yt-dlp');
+    safeSend('ytdlp-update-status', { updating: false, updated });
     if (err) {
       console.log('yt-dlp update check failed (non-critical):', err.message);
       return;
@@ -489,7 +499,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 }
             }
             console.log(`Download paused (${reason})`);
-            mainWindow.webContents.send('download-progress', { paused: true, reason, stage: downloadStage });
+            safeSend('download-progress', { paused: true, reason, stage: downloadStage });
         },
         resume: () => {
             if (!isPaused || !ytDlpProcess || isCancelled) return;
@@ -505,7 +515,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                 }
             }
             console.log('Download resumed');
-            mainWindow.webContents.send('download-progress', { paused: false, reason: null, stage: downloadStage });
+            safeSend('download-progress', { paused: false, reason: null, stage: downloadStage });
         },
         get isPaused() { return isPaused; },
         get pauseReason() { return pauseReason; },
@@ -565,7 +575,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
 
       // Send an initial "started" event so the UI shows activity immediately
-      mainWindow.webContents.send('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
+      safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
 
       let lastPercent = -1;
       let stdoutBuf = '';
@@ -590,10 +600,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
             lastPercent = -1;
           } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
             downloadStage = 'merging';
-            if (!isPaused) mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
+            if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
           } else if (line.includes('[ExtractAudio]') || line.includes('[FFmpegMetadata]')) {
             downloadStage = 'processing';
-            if (!isPaused) mainWindow.webContents.send('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
+            if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
           }
 
           // Don't send progress events while paused — pipe buffer may still drain
@@ -619,7 +629,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
           if (percentValue !== null && percentValue !== lastPercent) {
             lastPercent = percentValue;
-            mainWindow.webContents.send('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
+            safeSend('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
           }
         });
       });
@@ -646,7 +656,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       console.log('Download complete! File saved at:', filePath);
 
       const finalSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
-      mainWindow.webContents.send("download-progress", {
+      safeSend("download-progress", {
         percent: 100,
         downloadedBytes: finalSize,
         totalBytes: finalSize,
