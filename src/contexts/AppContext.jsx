@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const AppContext = createContext();
 
@@ -17,6 +17,7 @@ export const AppProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
+  const fetchIdRef = useRef(0);
 
   // Fetch history on mount
   useEffect(() => {
@@ -39,9 +40,11 @@ export const AppProvider = ({ children }) => {
     if (!url || isDownloading) return;
     setIsLoading(true);
     setFetchError(null);
+    const currentFetchId = ++fetchIdRef.current;
     console.log("Fetching details...");
     try {
       const result = await window.electronAPI.getVideoInfo(url);
+      if (currentFetchId !== fetchIdRef.current) return; // stale — discard
       if (result.success) {
         setVideoDetails(result);
       } else {
@@ -50,12 +53,22 @@ export const AppProvider = ({ children }) => {
         setFetchError(result.error);
       }
     } catch (error) {
+      if (currentFetchId !== fetchIdRef.current) return; // stale — discard
       console.error("Failed to fetch video details:", error);
       setVideoDetails(null);
       setFetchError(error.message || 'Something went wrong');
     } finally {
-      setIsLoading(false);
+      if (currentFetchId === fetchIdRef.current) {
+        setIsLoading(false);
+      }
     }
+  };
+
+  const cancelFetchDetails = () => {
+    fetchIdRef.current++; // invalidate any in-flight response
+    window.electronAPI.cancelInfoFetch();
+    setIsLoading(false);
+    goBackToHistory();
   };
 
   const goBackToHistory = () => {
@@ -83,6 +96,7 @@ export const AppProvider = ({ children }) => {
     setIsDownloading,
     handleUrlChange,
     handleFetchDetails,
+    cancelFetchDetails,
     goBackToHistory,
     refreshHistory,
   };

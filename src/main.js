@@ -37,6 +37,7 @@ const BASE_ARGS = [
 const store = new Store();
 let mainWindow;
 let currentDownloadProcess = null;
+let currentInfoFetchProcess = null;
 let isUpdatingYtDlp = false;
 let networkCheckInterval = null;
 let wasOnline = true;
@@ -310,6 +311,17 @@ ipcMain.on("resume-download", () => {
     }
 });
 
+ipcMain.on("cancel-info-fetch", () => {
+    if (currentInfoFetchProcess) {
+        try {
+            currentInfoFetchProcess.kill('SIGTERM');
+        } catch (e) {
+            console.error('Failed to kill info fetch process:', e.message);
+        }
+        currentInfoFetchProcess = null;
+    }
+});
+
 ipcMain.handle("get-video-info", async (event, url) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
@@ -325,15 +337,20 @@ ipcMain.handle("get-video-info", async (event, url) => {
         '--dump-json',
         ...BASE_ARGS,
       ], { env: getYtDlpEnv() });
+      currentInfoFetchProcess = proc;
       let out = '';
       let err = '';
       proc.stdout.on('data', d => { out += d.toString(); });
       proc.stderr.on('data', d => { err += d.toString(); });
       proc.on('close', code => {
+        currentInfoFetchProcess = null;
         if (code === 0) resolve(out);
         else reject(new Error(err || `yt-dlp exited with code ${code}`));
       });
-      proc.on('error', reject);
+      proc.on('error', (e) => {
+        currentInfoFetchProcess = null;
+        reject(e);
+      });
     });
 
     const info = JSON.parse(stdout);

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openFileLocation: (filePath) => ipcRenderer.invoke("open-file-location", filePath),
   openExternalLink: (url) => ipcRenderer.invoke("open-external-link", url),
   cancelDownload: () => ipcRenderer.send("cancel-download"),
+  cancelInfoFetch: () => ipcRenderer.send("cancel-info-fetch"),
   pauseDownload: () => ipcRenderer.send("pause-download"),
   resumeDownload: () => ipcRenderer.send("resume-download"),
   onDownloadProgress: (callback) => {

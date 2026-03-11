@@ -60,7 +60,7 @@ const UpdateBanner = () => {
 };
 
 const AppContent = () => {
-  const { isLoading, videoDetails, fetchError, goBackToHistory } = useAppContext();
+  const { isLoading, videoDetails, fetchError, goBackToHistory, cancelFetchDetails } = useAppContext();
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -68,7 +68,7 @@ const AppContent = () => {
       <Card className="flex-1 overflow-hidden border-border/50">
         <CardContent className="flex flex-col h-full p-5">
           {isLoading ? (
-            <LoadingComponent />
+            <LoadingComponent onCancel={cancelFetchDetails} />
           ) : videoDetails ? (
             <DetailsView />
           ) : fetchError ? (
