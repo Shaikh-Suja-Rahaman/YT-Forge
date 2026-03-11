@@ -2,7 +2,8 @@ import React from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2, Search } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Loader2, Search, Github } from 'lucide-react';
 
 const Header = () => {
   const { url, handleUrlChange, handleFetchDetails, isLoading, isDownloading } = useAppContext();
@@ -32,6 +33,21 @@ const Header = () => {
           </>
         )}
       </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0 text-muted-foreground/40 hover:text-white transition-colors"
+            onClick={() => window.electronAPI.openExternalLink('https://github.com/Shaikh-Suja-Rahaman/YT-Forge')}
+          >
+            <Github className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Support this project
+        </TooltipContent>
+      </Tooltip>
     </header>
   );
 };

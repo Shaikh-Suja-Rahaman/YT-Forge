@@ -36,7 +36,7 @@ const HistoryView = () => {
         {history.length > 0 && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive-foreground gap-1.5 h-7 text-xs">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-white gap-1.5 h-7 text-xs">
                 <Trash2 className="h-3 w-3" />
                 Clear
               </Button>
@@ -50,7 +50,7 @@ const HistoryView = () => {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-destructive-foreground hover:bg-destructive/80">
+                <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-white hover:bg-destructive/80">
                   Clear History
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -135,7 +135,7 @@ const HistoryView = () => {
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleDeleteItem(item.timestamp)} className="bg-destructive text-destructive-foreground hover:bg-destructive/80">
+                        <AlertDialogAction onClick={() => handleDeleteItem(item.timestamp)} className="bg-destructive text-white hover:bg-destructive/80">
                           Remove
                         </AlertDialogAction>
                       </AlertDialogFooter>
