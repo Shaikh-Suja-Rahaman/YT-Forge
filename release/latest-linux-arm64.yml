@@ -1,0 +1,12 @@
+version: 1.0.0
+files:
+  - url: YT-FORGE-1.0.0-arm64.AppImage
+    sha512: F+HUQG2WUV5GRutoaT9w3St7Ee90br4pvoJhyo7txIXVzLVS/2sn9HMWAOpcQun0QGQJPzkyB1anEnv2BUAQEQ==
+    size: 227655060
+    blockMapSize: 235744
+  - url: yt-forge_1.0.0_arm64.deb
+    sha512: tPAyjCGyxzkvJQ9eXs8xjt+6pbMz+MZ9TfaM6w4KCwZZcXwsYbzwxxeqw6r5AhUtbsHIqnhlGMrCMWriSeWgkw==
+    size: 173316416
+path: YT-FORGE-1.0.0-arm64.AppImage
+sha512: F+HUQG2WUV5GRutoaT9w3St7Ee90br4pvoJhyo7txIXVzLVS/2sn9HMWAOpcQun0QGQJPzkyB1anEnv2BUAQEQ==
+releaseDate: '2026-03-11T22:59:50.605Z'
