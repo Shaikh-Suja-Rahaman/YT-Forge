@@ -22,4 +22,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners('ytdlp-update-status');
     ipcRenderer.on('ytdlp-update-status', (_event, value) => callback(value));
   },
+  // App auto-update APIs
+  checkForAppUpdate: () => ipcRenderer.invoke('check-for-app-update'),
+  downloadAppUpdate: () => ipcRenderer.send('download-app-update'),
+  installAppUpdate: () => ipcRenderer.send('install-app-update'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onAppUpdateStatus: (callback) => {
+    ipcRenderer.removeAllListeners('app-update-status');
+    ipcRenderer.on('app-update-status', (_event, value) => callback(value));
+  },
 });

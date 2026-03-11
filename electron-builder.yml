@@ -1,0 +1,48 @@
+appId: com.suja.ytforge
+productName: YT-FORGE
+directories:
+  output: release
+
+files:
+  - dist-electron/**/*
+  - dist/**/*
+  - package.json
+
+asar: true
+asarUnpack:
+  - "**/node_modules/ffmpeg-static/**"
+  - "**/node_modules/ffprobe-static/**"
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.utilities
+  extraResources:
+    - from: bin/yt-dlp_macos
+      to: bin/yt-dlp_macos
+
+win:
+  target:
+    - nsis
+  extraResources:
+    - from: bin/yt-dlp.exe
+      to: bin/yt-dlp.exe
+
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: AudioVideo
+  extraResources:
+    - from: bin/yt-dlp_linux
+      to: bin/yt-dlp_linux
+
+publish:
+  provider: github
+  owner: Shaikh-Suja-Rahaman
+  repo: YT-Forge

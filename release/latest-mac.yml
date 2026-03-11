@@ -1,0 +1,11 @@
+version: 1.0.0
+files:
+  - url: YT-FORGE-1.0.0-arm64-mac.zip
+    sha512: AF4wvukOHVyyTl3+PogJFZSO/M5V7s7TzTD/Pa2klvwkY3sC4h8yvLsXaWMzKaxRQxWzki9gQVuKZ/fc+QpUgA==
+    size: 244399523
+  - url: YT-FORGE-1.0.0-arm64.dmg
+    sha512: inwnjYSrCLrKpAWRxGjG9lCLxlfPVJrnN32lgzXNbKcq5LHUOQ3wEVf/blvtpvJDHGsmUTdgDufrNQLeto5o9A==
+    size: 251947879
+path: YT-FORGE-1.0.0-arm64-mac.zip
+sha512: AF4wvukOHVyyTl3+PogJFZSO/M5V7s7TzTD/Pa2klvwkY3sC4h8yvLsXaWMzKaxRQxWzki9gQVuKZ/fc+QpUgA==
+releaseDate: '2026-03-11T19:32:28.004Z'

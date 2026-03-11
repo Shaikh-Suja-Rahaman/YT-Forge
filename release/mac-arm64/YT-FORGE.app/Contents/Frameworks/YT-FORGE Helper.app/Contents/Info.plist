@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleDisplayName</key>
+    <string>YT-FORGE Helper</string>
+    <key>CFBundleExecutable</key>
+    <string>YT-FORGE Helper</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.suja.ytforge.helper</string>
+    <key>CFBundleName</key>
+    <string>Electron Helper</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>DTCompiler</key>
+    <string>com.apple.compilers.llvm.clang.1_0</string>
+    <key>DTSDKBuild</key>
+    <string>23F73</string>
+    <key>DTSDKName</key>
+    <string>macosx14.5</string>
+    <key>DTXcode</key>
+    <string>1540</string>
+    <key>DTXcodeBuild</key>
+    <string>15F31d</string>
+    <key>LSEnvironment</key>
+    <dict>
+      <key>MallocNanoZone</key>
+      <string>0</string>
+    </dict>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+  </dict>
+</plist>

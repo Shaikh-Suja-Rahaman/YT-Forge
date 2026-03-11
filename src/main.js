@@ -1,8 +1,5 @@
-// Handle Windows Squirrel installer events (install/update/uninstall)
-// Must be at the very top before any other code runs
-if (require('electron-squirrel-startup')) app.quit();
-
 const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
+const { autoUpdater } = require('electron-updater');
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -188,11 +185,10 @@ function createWindow() {
     },
   });
 
-  // In development, load from Vite dev server; in production, load the file
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  if (!app.isPackaged) {
+    mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
 
@@ -216,11 +212,52 @@ function startNetworkMonitoring() {
   }, 3000);
 }
 
+// ---------------------------------------------------------------------------
+// App auto-update via electron-updater (GitHub Releases)
+// ---------------------------------------------------------------------------
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function setupAutoUpdater() {
+  autoUpdater.on('update-available', (info) => {
+    safeSend('app-update-status', { status: 'available', version: info.version });
+  });
+  autoUpdater.on('update-not-available', () => {
+    safeSend('app-update-status', { status: 'up-to-date' });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    safeSend('app-update-status', { status: 'downloading', percent: Math.round(progress.percent) });
+  });
+  autoUpdater.on('update-downloaded', () => {
+    safeSend('app-update-status', { status: 'downloaded' });
+  });
+  autoUpdater.on('error', (err) => {
+    console.log('Auto-updater error (non-critical):', err.message);
+    safeSend('app-update-status', { status: 'error', message: err.message });
+  });
+}
+
+ipcMain.handle('check-for-app-update', () => {
+  autoUpdater.checkForUpdates();
+});
+ipcMain.on('download-app-update', () => {
+  autoUpdater.downloadUpdate();
+});
+ipcMain.on('install-app-update', () => {
+  autoUpdater.quitAndInstall();
+});
+ipcMain.handle('get-app-version', () => app.getVersion());
+
 app.whenReady().then(() => {
   createWindow();
   // Non-blocking: check for yt-dlp updates after the window is ready
   updateYtDlp();
   startNetworkMonitoring();
+  // Check for app updates after a short delay (only in production)
+  setupAutoUpdater();
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+  }
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
