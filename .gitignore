@@ -91,3 +91,13 @@ typings/
 # Electron-Forge
 out/
 
+# Electron build artifacts and large binaries
+/dist-electron/
+/release/
+/bin/yt-dlp_linux
+/bin/yt-dlp_macos
+*.dmg
+*.AppImage
+*.zip
+*.deb
+*.exe
