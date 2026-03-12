@@ -33,6 +33,7 @@ let mainWindow;
 let currentDownloadProcess = null;
 let currentInfoFetchProcess = null;
 let isUpdatingYtDlp = false;
+let ytDlpPhase = null;
 let networkCheckInterval = null;
 let wasOnline = true;
 function getBinaryName() {
@@ -100,18 +101,38 @@ function updateYtDlp() {
     return;
   }
   isUpdatingYtDlp = true;
+  ytDlpPhase = "checking";
   console.log("Checking for yt-dlp updates...");
-  safeSend("ytdlp-update-status", { updating: true });
-  execFile(ytDlpBinaryPath, ["-U"], { windowsHide: true }, (err, stdout, stderr) => {
+  safeSend("ytdlp-update-status", { status: "checking" });
+  const proc = spawn(ytDlpBinaryPath, ["-U"], { env: getYtDlpEnv() });
+  let stdoutAll = "";
+  let stderrAll = "";
+  let downloadingSignalled = false;
+  proc.stdout.on("data", (chunk) => {
+    const text = chunk.toString();
+    stdoutAll += text;
+    if (!downloadingSignalled && (text.includes("Updating yt-dlp") || text.includes("Downloading"))) {
+      downloadingSignalled = true;
+      ytDlpPhase = "downloading";
+      safeSend("ytdlp-update-status", { status: "downloading" });
+    }
+    console.log("yt-dlp update stdout:", text.trim());
+  });
+  proc.stderr.on("data", (chunk) => {
+    stderrAll += chunk.toString();
+  });
+  proc.on("close", (code) => {
     isUpdatingYtDlp = false;
-    const updated = stdout && stdout.includes("Updated yt-dlp");
-    safeSend("ytdlp-update-status", { updating: false, updated });
-    if (err) {
-      console.log("yt-dlp update check failed (non-critical):", err.message);
+    ytDlpPhase = null;
+    if (code !== 0) {
+      console.log("yt-dlp update check failed (non-critical):", stderrAll.trim() || `exit ${code}`);
+      safeSend("ytdlp-update-status", { status: "error" });
       return;
     }
-    if (stdout) console.log("yt-dlp update:", stdout.trim());
-    if (stderr) console.log("yt-dlp update stderr:", stderr.trim());
+    const updated = stdoutAll.includes("Updated yt-dlp") || stdoutAll.includes("Successfully updated");
+    safeSend("ytdlp-update-status", { status: updated ? "updated" : "up-to-date" });
+    if (stdoutAll) console.log("yt-dlp update:", stdoutAll.trim());
+    if (stderrAll) console.log("yt-dlp update stderr:", stderrAll.trim());
     if (process.platform !== "win32") {
       try {
         fs.chmodSync(ytDlpBinaryPath, "755");
@@ -120,12 +141,19 @@ function updateYtDlp() {
       }
     }
     if (process.platform === "darwin") {
-      execFile("xattr", ["-dr", "com.apple.quarantine", ytDlpBinaryPath], { windowsHide: true }, (xattrErr) => {
+      execFile("xattr", ["-dr", "com.apple.quarantine", ytDlpBinaryPath], (xattrErr) => {
         if (xattrErr) console.log("xattr quarantine clear (non-critical):", xattrErr.message);
       });
     }
   });
+  proc.on("error", (err) => {
+    isUpdatingYtDlp = false;
+    ytDlpPhase = null;
+    console.log("yt-dlp update spawn error (non-critical):", err.message);
+    safeSend("ytdlp-update-status", { status: "error" });
+  });
 }
+ipcMain.handle("get-ytdlp-status", () => ytDlpPhase);
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
@@ -189,12 +217,14 @@ ipcMain.on("install-app-update", () => {
 ipcMain.handle("get-app-version", () => app.getVersion());
 app.whenReady().then(() => {
   createWindow();
-  updateYtDlp();
   startNetworkMonitoring();
   setupAutoUpdater();
-  if (app.isPackaged) {
-    setTimeout(() => autoUpdater.checkForUpdates(), 5e3);
-  }
+  mainWindow.webContents.once("did-finish-load", () => {
+    updateYtDlp();
+    if (app.isPackaged) {
+      setTimeout(() => autoUpdater.checkForUpdates(), 5e3);
+    }
+  });
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -290,7 +320,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
         url,
         "--dump-json",
         ...BASE_ARGS
-      ], { env: getYtDlpEnv(), windowsHide: true });
+      ], { env: getYtDlpEnv() });
       currentInfoFetchProcess = proc;
       let out = "";
       let err = "";
@@ -437,7 +467,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           }
         }
         if (process.platform === "win32") {
-          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"], { windowsHide: true });
+          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"]);
         } else {
           try {
             process.kill(-ytDlpProcess.pid, "SIGTERM");
@@ -530,7 +560,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       args.push("--merge-output-format", "mp4");
     }
     console.log("Starting yt-dlp with command:", ytDlpBinaryPath, args.join(" "));
-    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true, windowsHide: true });
+    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
     safeSend("download-progress", { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: "starting" });
     let lastPercent = -1;
     let stdoutBuf = "";
@@ -617,9 +647,24 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     store.set("downloadHistory", updatedHistory);
     return { success: true, path: filePath };
   } catch (err) {
-    if (fs.existsSync(filePath) && !isCancelled) fs.unlinkSync(filePath);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log("Deleted incomplete file after cancel or error:", filePath);
+      } catch (delErr) {
+        console.error("Failed to delete incomplete file after cancel or error:", delErr);
+      }
+    }
     return { success: false, error: err.message };
   } finally {
+    if (isCancelled && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log("Deleted incomplete file in finally after cancel:", filePath);
+      } catch (delErr) {
+        console.error("Failed to delete incomplete file in finally after cancel:", delErr);
+      }
+    }
     currentDownloadProcess = null;
   }
 });

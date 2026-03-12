@@ -36,6 +36,7 @@ let mainWindow;
 let currentDownloadProcess = null;
 let currentInfoFetchProcess = null;
 let isUpdatingYtDlp = false;
+let ytDlpPhase = null; // 'checking' | 'downloading' | null — tracks live update phase for renderer query
 let networkCheckInterval = null;
 let wasOnline = true;
 
@@ -51,10 +52,10 @@ let wasOnline = true;
  */
 function getBinaryName() {
   switch (process.platform) {
-    case 'win32':  return 'yt-dlp.exe';
+    case 'win32': return 'yt-dlp.exe';
     case 'darwin': return 'yt-dlp_macos';
-    case 'linux':  return 'yt-dlp_linux';
-    default:       return 'yt-dlp_linux'; // best guess
+    case 'linux': return 'yt-dlp_linux';
+    default: return 'yt-dlp_linux'; // best guess
   }
 }
 
@@ -84,7 +85,7 @@ function getWritableBinaryPath() {
  */
 function ensureYtDlpBinary() {
   const writable = getWritableBinaryPath();
-  const bundled  = getBundledBinaryPath();
+  const bundled = getBundledBinaryPath();
 
   // In dev, just make sure the file exists in bin/
   if (!app.isPackaged) {
@@ -142,18 +143,44 @@ function updateYtDlp() {
     return;
   }
   isUpdatingYtDlp = true;
+  ytDlpPhase = 'checking';
   console.log('Checking for yt-dlp updates...');
-  safeSend('ytdlp-update-status', { updating: true });
-  execFile(ytDlpBinaryPath, ['-U'], (err, stdout, stderr) => {
+  // Phase 1: tell the UI we are checking
+  safeSend('ytdlp-update-status', { status: 'checking' });
+
+  const proc = spawn(ytDlpBinaryPath, ['-U'], { env: getYtDlpEnv() });
+  let stdoutAll = '';
+  let stderrAll = '';
+  let downloadingSignalled = false;
+
+  proc.stdout.on('data', (chunk) => {
+    const text = chunk.toString();
+    stdoutAll += text;
+    // yt-dlp prints "Updating yt-dlp to" / "Downloading" when installing a new version
+    if (!downloadingSignalled && (text.includes('Updating yt-dlp') || text.includes('Downloading'))) {
+      downloadingSignalled = true;
+      ytDlpPhase = 'downloading';
+      safeSend('ytdlp-update-status', { status: 'downloading' });
+    }
+    console.log('yt-dlp update stdout:', text.trim());
+  });
+
+  proc.stderr.on('data', (chunk) => {
+    stderrAll += chunk.toString();
+  });
+
+  proc.on('close', (code) => {
     isUpdatingYtDlp = false;
-    const updated = stdout && stdout.includes('Updated yt-dlp');
-    safeSend('ytdlp-update-status', { updating: false, updated });
-    if (err) {
-      console.log('yt-dlp update check failed (non-critical):', err.message);
+    ytDlpPhase = null;
+    if (code !== 0) {
+      console.log('yt-dlp update check failed (non-critical):', stderrAll.trim() || `exit ${code}`);
+      safeSend('ytdlp-update-status', { status: 'error' });
       return;
     }
-    if (stdout) console.log('yt-dlp update:', stdout.trim());
-    if (stderr) console.log('yt-dlp update stderr:', stderr.trim());
+    const updated = stdoutAll.includes('Updated yt-dlp') || stdoutAll.includes('Successfully updated');
+    safeSend('ytdlp-update-status', { status: updated ? 'updated' : 'up-to-date' });
+    if (stdoutAll) console.log('yt-dlp update:', stdoutAll.trim());
+    if (stderrAll) console.log('yt-dlp update stderr:', stderrAll.trim());
 
     // After a successful update, re-apply executable permissions on Unix
     if (process.platform !== 'win32') {
@@ -171,7 +198,17 @@ function updateYtDlp() {
       });
     }
   });
+
+  proc.on('error', (err) => {
+    isUpdatingYtDlp = false;
+    ytDlpPhase = null;
+    console.log('yt-dlp update spawn error (non-critical):', err.message);
+    safeSend('ytdlp-update-status', { status: 'error' });
+  });
 }
+
+// Renderer can call this on mount to get the phase it may have missed via IPC events
+ipcMain.handle('get-ytdlp-status', () => ytDlpPhase);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -250,14 +287,16 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 
 app.whenReady().then(() => {
   createWindow();
-  // Non-blocking: check for yt-dlp updates after the window is ready
-  updateYtDlp();
   startNetworkMonitoring();
-  // Check for app updates after a short delay (only in production)
   setupAutoUpdater();
-  if (app.isPackaged) {
-    setTimeout(() => autoUpdater.checkForUpdates(), 5000);
-  }
+  // Start yt-dlp update check AFTER the renderer finishes loading so the
+  // 'checking' IPC event is never sent before the listener is registered.
+  mainWindow.webContents.once('did-finish-load', () => {
+    updateYtDlp();
+    if (app.isPackaged) {
+      setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+    }
+  });
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -278,12 +317,12 @@ app.on("activate", () => {
 });
 
 const formatBytes = (bytes, decimals = 2) => {
-    if (!+bytes) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 };
 
 const sizeToBytes = (value, unit) => {
@@ -331,32 +370,32 @@ ipcMain.handle("open-file-location", (event, filePath) => {
 ipcMain.handle("open-external-link", (event, url) => shell.openExternal(url));
 
 ipcMain.on("cancel-download", () => {
-    if (currentDownloadProcess && typeof currentDownloadProcess.cancel === 'function') {
-        currentDownloadProcess.cancel();
-    }
+  if (currentDownloadProcess && typeof currentDownloadProcess.cancel === 'function') {
+    currentDownloadProcess.cancel();
+  }
 });
 
 ipcMain.on("pause-download", () => {
-    if (currentDownloadProcess && typeof currentDownloadProcess.pause === 'function') {
-        currentDownloadProcess.pause();
-    }
+  if (currentDownloadProcess && typeof currentDownloadProcess.pause === 'function') {
+    currentDownloadProcess.pause();
+  }
 });
 
 ipcMain.on("resume-download", () => {
-    if (currentDownloadProcess && typeof currentDownloadProcess.resume === 'function') {
-        currentDownloadProcess.resume();
-    }
+  if (currentDownloadProcess && typeof currentDownloadProcess.resume === 'function') {
+    currentDownloadProcess.resume();
+  }
 });
 
 ipcMain.on("cancel-info-fetch", () => {
-    if (currentInfoFetchProcess) {
-        try {
-            currentInfoFetchProcess.kill('SIGTERM');
-        } catch (e) {
-            console.error('Failed to kill info fetch process:', e.message);
-        }
-        currentInfoFetchProcess = null;
+  if (currentInfoFetchProcess) {
+    try {
+      currentInfoFetchProcess.kill('SIGTERM');
+    } catch (e) {
+      console.error('Failed to kill info fetch process:', e.message);
     }
+    currentInfoFetchProcess = null;
+  }
 });
 
 ipcMain.handle("get-video-info", async (event, url) => {
@@ -468,293 +507,293 @@ ipcMain.handle("get-video-info", async (event, url) => {
 });
 
 ipcMain.handle("download-thumbnail", async (event, { url, title }) => {
-    const safeTitle = title.replace(/[\\/:"*?<>|]/g, '');
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-        title: 'Save Thumbnail', defaultPath: `${safeTitle}_thumbnail.jpg`,
-        buttonLabel: 'Save Image', filters: [{ name: 'JPEG Image', extensions: ['jpg'] }]
+  const safeTitle = title.replace(/[\\/:"*?<>|]/g, '');
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Thumbnail', defaultPath: `${safeTitle}_thumbnail.jpg`,
+    buttonLabel: 'Save Image', filters: [{ name: 'JPEG Image', extensions: ['jpg'] }]
+  });
+  if (canceled || !filePath) return { success: false, error: 'Save dialog was canceled.' };
+  return new Promise((resolve) => {
+    const fileStream = fs.createWriteStream(filePath);
+    const request = https.get(url, (response) => {
+      if (response.statusCode !== 200) { fs.unlink(filePath, () => { }); resolve({ success: false, error: `Download failed. Status: ${response.statusCode}` }); return; }
+      response.pipe(fileStream);
     });
-    if (canceled || !filePath) return { success: false, error: 'Save dialog was canceled.' };
-    return new Promise((resolve) => {
-        const fileStream = fs.createWriteStream(filePath);
-        const request = https.get(url, (response) => {
-            if (response.statusCode !== 200) { fs.unlink(filePath, () => {}); resolve({ success: false, error: `Download failed. Status: ${response.statusCode}` }); return; }
-            response.pipe(fileStream);
-        });
-        fileStream.on('finish', () => fileStream.close(() => resolve({ success: true, path: filePath })));
-        request.on('error', (err) => { fs.unlink(filePath, () => {}); resolve({ success: false, error: err.message }); });
-    });
+    fileStream.on('finish', () => fileStream.close(() => resolve({ success: true, path: filePath })));
+    request.on('error', (err) => { fs.unlink(filePath, () => { }); resolve({ success: false, error: err.message }); });
+  });
 });
 
 ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl }) => {
-    if (isUpdatingYtDlp) {
-      return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
+  if (isUpdatingYtDlp) {
+    return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
+  }
+  const safeTitle = title.replace(/[\\/:"*?<>|]/g, '');
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: `Save ${type.toUpperCase()}`,
+    defaultPath: `${safeTitle}.${type}`,
+    buttonLabel: "Save",
+    filters: type === 'mp4' ? [{ name: "MPEG-4 Video", extensions: ["mp4"] }] : [{ name: "MP3 Audio", extensions: ["mp3"] }],
+  });
+
+  if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
+
+  // Delete the file if it already exists to force re-download
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+      console.log('Deleted existing file to force fresh download');
+    } catch (err) {
+      console.error('Failed to delete existing file:', err);
     }
-    const safeTitle = title.replace(/[\\/:"*?<>|]/g, '');
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-        title: `Save ${type.toUpperCase()}`,
-        defaultPath: `${safeTitle}.${type}`,
-        buttonLabel: "Save",
-        filters: type === 'mp4' ? [{ name: "MPEG-4 Video", extensions: ["mp4"] }] : [{ name: "MP3 Audio", extensions: ["mp3"] }],
+  }
+
+  let isCancelled = false;
+  let isPaused = false;
+  let pauseReason = null;       // null | 'user' | 'network'
+  let ytDlpProcess = null;
+  let downloadStage = 'starting';
+
+  currentDownloadProcess = {
+    cancel: () => {
+      isCancelled = true;
+      if (ytDlpProcess) {
+        // If paused (SIGSTOP), resume the process group first so it can receive SIGTERM
+        if (isPaused && process.platform !== 'win32') {
+          try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
+        }
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
+        } else {
+          // Kill the entire process group
+          try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
+            ytDlpProcess.kill('SIGTERM');
+          }
+        }
+      }
+      isPaused = false;
+      pauseReason = null;
+    },
+    pause: (reason = 'user') => {
+      if (isPaused || !ytDlpProcess || isCancelled) return;
+      // Don't allow pausing during merging/processing (local ffmpeg ops)
+      if (downloadStage === 'merging' || downloadStage === 'processing') return;
+      isPaused = true;
+      pauseReason = reason;
+      if (process.platform !== 'win32') {
+        try {
+          // Send SIGSTOP to the entire process group (negative PID)
+          process.kill(-ytDlpProcess.pid, 'SIGSTOP');
+          console.log(`SIGSTOP sent to process group -${ytDlpProcess.pid}`);
+        } catch (e) {
+          console.error('SIGSTOP failed:', e.message);
+          // Fallback: try sending to just the process
+          try { ytDlpProcess.kill('SIGSTOP'); } catch (e2) { console.error('SIGSTOP fallback also failed:', e2.message); }
+        }
+      }
+      console.log(`Download paused (${reason})`);
+      safeSend('download-progress', { paused: true, reason, stage: downloadStage });
+    },
+    resume: () => {
+      if (!isPaused || !ytDlpProcess || isCancelled) return;
+      isPaused = false;
+      pauseReason = null;
+      if (process.platform !== 'win32') {
+        try {
+          process.kill(-ytDlpProcess.pid, 'SIGCONT');
+          console.log(`SIGCONT sent to process group -${ytDlpProcess.pid}`);
+        } catch (e) {
+          console.error('SIGCONT failed:', e.message);
+          try { ytDlpProcess.kill('SIGCONT'); } catch (e2) { console.error('SIGCONT fallback also failed:', e2.message); }
+        }
+      }
+      console.log('Download resumed');
+      safeSend('download-progress', { paused: false, reason: null, stage: downloadStage });
+    },
+    get isPaused() { return isPaused; },
+    get pauseReason() { return pauseReason; },
+    get stage() { return downloadStage; },
+  };
+
+  try {
+    let formatArg;
+    if (type === 'mp3') {
+      formatArg = 'bestaudio[ext=m4a]/bestaudio';
+    } else {
+      const h = parseInt(quality);
+      if (!isNaN(h)) {
+        // Prefer H.264 (avc) for QuickTime / Premiere Pro / iMovie compatibility.
+        // Fall back to VP9 only if H.264 isn't available (e.g. 1440p / 4K).
+        // AV1 is never selected.
+        formatArg =
+          `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
+          `bestvideo[height=${h}][vcodec^=avc]+bestaudio/` +
+          `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+          `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
+          `bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
+          `bestvideo[height<=${h}][vcodec^=avc]+bestaudio/` +
+          `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
+          `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
+      } else {
+        formatArg =
+          'bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/' +
+          'bestvideo[vcodec^=avc]+bestaudio/' +
+          'bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/' +
+          'bestvideo[vcodec!^=av01]+bestaudio/best';
+      }
+    }
+
+    console.log('Download request - Selected format:', formatArg, 'Quality itag:', quality, 'Type:', type);
+
+    const args = [
+      url,
+      '--format', formatArg,
+      '--output', filePath,
+      '--ffmpeg-location', ffmpegPath,
+      '--newline',
+      ...BASE_ARGS,
+    ];
+
+    if (type === 'mp3') {
+      args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0');
+    } else {
+      // ffmpeg merges separate video+audio streams into a single mp4 container
+      args.push('--merge-output-format', 'mp4');
+    }
+
+    console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
+
+    // Spawn in its own process group (detached) so SIGSTOP/SIGCONT
+    // can freeze/resume the entire group via negative PID
+    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
+
+    // Send an initial "started" event so the UI shows activity immediately
+    safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
+
+    let lastPercent = -1;
+    let stdoutBuf = '';
+    let stageCount = 0; // tracks how many [download] Destination lines we've seen
+
+    ytDlpProcess.stdout.on('data', (chunk) => {
+      stdoutBuf += chunk.toString();
+      const lines = stdoutBuf.split(/\r?\n/);
+      stdoutBuf = lines.pop(); // keep incomplete last line
+      lines.forEach((line) => {
+        if (!line.trim()) return;
+        console.log('yt-dlp:', line);
+
+        // Detect stage transitions even while paused (so we track state correctly)
+        if (line.includes('[download] Destination:')) {
+          stageCount++;
+          if (type === 'mp3') {
+            downloadStage = 'audio';
+          } else {
+            downloadStage = stageCount === 1 ? 'video' : 'audio';
+          }
+          lastPercent = -1;
+        } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
+          downloadStage = 'merging';
+          if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
+        } else if (line.includes('[ExtractAudio]') || line.includes('[FFmpegMetadata]')) {
+          downloadStage = 'processing';
+          if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
+        }
+
+        // Don't send progress events while paused — pipe buffer may still drain
+        if (isPaused) return;
+
+        // yt-dlp progress line looks like: [download]  12.3% of   54.23MiB at  3.10MiB/s ETA 00:15
+        const downloadMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGTi]+B)/i);
+        let percentValue = null;
+        let downloadedBytes = 0;
+        let totalBytes = 0;
+
+        if (downloadMatch) {
+          percentValue = Math.min(100, parseFloat(downloadMatch[1]));
+          const totalValue = parseFloat(downloadMatch[2]);
+          const unit = downloadMatch[3];
+          totalBytes = sizeToBytes(totalValue, unit);
+          downloadedBytes = Math.round(totalBytes * (percentValue / 100));
+        } else {
+          // Fallback: grab any bare percentage in the line
+          const bare = line.match(/(?:^|\s)(\d{1,3}\.?\d*)%/);
+          if (bare) percentValue = Math.min(100, parseFloat(bare[1]));
+        }
+
+        if (percentValue !== null && percentValue !== lastPercent) {
+          lastPercent = percentValue;
+          safeSend('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
+        }
+      });
     });
 
-    if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
+    ytDlpProcess.stderr.on('data', (data) => {
+      console.error('yt-dlp stderr:', data.toString());
+    });
 
-    // Delete the file if it already exists to force re-download
-    if (fs.existsSync(filePath)) {
-        try {
-            fs.unlinkSync(filePath);
-            console.log('Deleted existing file to force fresh download');
-        } catch (err) {
-            console.error('Failed to delete existing file:', err);
-        }
-    }
-
-    let isCancelled = false;
-    let isPaused = false;
-    let pauseReason = null;       // null | 'user' | 'network'
-    let ytDlpProcess = null;
-    let downloadStage = 'starting';
-
-    currentDownloadProcess = {
-        cancel: () => {
-            isCancelled = true;
-            if (ytDlpProcess) {
-                // If paused (SIGSTOP), resume the process group first so it can receive SIGTERM
-                if (isPaused && process.platform !== 'win32') {
-                    try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
-                }
-                if (process.platform === 'win32') {
-                    spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
-                } else {
-                    // Kill the entire process group
-                    try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
-                        ytDlpProcess.kill('SIGTERM');
-                    }
-                }
-            }
-            isPaused = false;
-            pauseReason = null;
-        },
-        pause: (reason = 'user') => {
-            if (isPaused || !ytDlpProcess || isCancelled) return;
-            // Don't allow pausing during merging/processing (local ffmpeg ops)
-            if (downloadStage === 'merging' || downloadStage === 'processing') return;
-            isPaused = true;
-            pauseReason = reason;
-            if (process.platform !== 'win32') {
-                try {
-                    // Send SIGSTOP to the entire process group (negative PID)
-                    process.kill(-ytDlpProcess.pid, 'SIGSTOP');
-                    console.log(`SIGSTOP sent to process group -${ytDlpProcess.pid}`);
-                } catch (e) {
-                    console.error('SIGSTOP failed:', e.message);
-                    // Fallback: try sending to just the process
-                    try { ytDlpProcess.kill('SIGSTOP'); } catch (e2) { console.error('SIGSTOP fallback also failed:', e2.message); }
-                }
-            }
-            console.log(`Download paused (${reason})`);
-            safeSend('download-progress', { paused: true, reason, stage: downloadStage });
-        },
-        resume: () => {
-            if (!isPaused || !ytDlpProcess || isCancelled) return;
-            isPaused = false;
-            pauseReason = null;
-            if (process.platform !== 'win32') {
-                try {
-                    process.kill(-ytDlpProcess.pid, 'SIGCONT');
-                    console.log(`SIGCONT sent to process group -${ytDlpProcess.pid}`);
-                } catch (e) {
-                    console.error('SIGCONT failed:', e.message);
-                    try { ytDlpProcess.kill('SIGCONT'); } catch (e2) { console.error('SIGCONT fallback also failed:', e2.message); }
-                }
-            }
-            console.log('Download resumed');
-            safeSend('download-progress', { paused: false, reason: null, stage: downloadStage });
-        },
-        get isPaused() { return isPaused; },
-        get pauseReason() { return pauseReason; },
-        get stage() { return downloadStage; },
-    };
-
-    try {
-      let formatArg;
-      if (type === 'mp3') {
-        formatArg = 'bestaudio[ext=m4a]/bestaudio';
-      } else {
-        const h = parseInt(quality);
-        if (!isNaN(h)) {
-          // Prefer H.264 (avc) for QuickTime / Premiere Pro / iMovie compatibility.
-          // Fall back to VP9 only if H.264 isn't available (e.g. 1440p / 4K).
-          // AV1 is never selected.
-          formatArg =
-            `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
-            `bestvideo[height=${h}][vcodec^=avc]+bestaudio/` +
-            `bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
-            `bestvideo[height=${h}][vcodec!^=av01]+bestaudio/` +
-            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/` +
-            `bestvideo[height<=${h}][vcodec^=avc]+bestaudio/` +
-            `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/` +
-            `bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
+    await new Promise((resolve, reject) => {
+      ytDlpProcess.on('close', (code) => {
+        if (isCancelled) {
+          reject(new Error('Download was canceled.'));
+        } else if (code === 0) {
+          resolve();
         } else {
-          formatArg =
-            'bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/' +
-            'bestvideo[vcodec^=avc]+bestaudio/' +
-            'bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/' +
-            'bestvideo[vcodec!^=av01]+bestaudio/best';
+          reject(new Error(`yt-dlp exited with code ${code}`));
         }
-      }
-
-      console.log('Download request - Selected format:', formatArg, 'Quality itag:', quality, 'Type:', type);
-
-      const args = [
-        url,
-        '--format', formatArg,
-        '--output', filePath,
-        '--ffmpeg-location', ffmpegPath,
-        '--newline',
-        ...BASE_ARGS,
-      ];
-
-      if (type === 'mp3') {
-        args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0');
-      } else {
-        // ffmpeg merges separate video+audio streams into a single mp4 container
-        args.push('--merge-output-format', 'mp4');
-      }
-
-      console.log('Starting yt-dlp with command:', ytDlpBinaryPath, args.join(' '));
-
-      // Spawn in its own process group (detached) so SIGSTOP/SIGCONT
-      // can freeze/resume the entire group via negative PID
-      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
-
-      // Send an initial "started" event so the UI shows activity immediately
-      safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
-
-      let lastPercent = -1;
-      let stdoutBuf = '';
-      let stageCount = 0; // tracks how many [download] Destination lines we've seen
-
-      ytDlpProcess.stdout.on('data', (chunk) => {
-        stdoutBuf += chunk.toString();
-        const lines = stdoutBuf.split(/\r?\n/);
-        stdoutBuf = lines.pop(); // keep incomplete last line
-        lines.forEach((line) => {
-          if (!line.trim()) return;
-          console.log('yt-dlp:', line);
-
-          // Detect stage transitions even while paused (so we track state correctly)
-          if (line.includes('[download] Destination:')) {
-            stageCount++;
-            if (type === 'mp3') {
-              downloadStage = 'audio';
-            } else {
-              downloadStage = stageCount === 1 ? 'video' : 'audio';
-            }
-            lastPercent = -1;
-          } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
-            downloadStage = 'merging';
-            if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
-          } else if (line.includes('[ExtractAudio]') || line.includes('[FFmpegMetadata]')) {
-            downloadStage = 'processing';
-            if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'processing' });
-          }
-
-          // Don't send progress events while paused — pipe buffer may still drain
-          if (isPaused) return;
-
-          // yt-dlp progress line looks like: [download]  12.3% of   54.23MiB at  3.10MiB/s ETA 00:15
-          const downloadMatch = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGTi]+B)/i);
-          let percentValue = null;
-          let downloadedBytes = 0;
-          let totalBytes = 0;
-
-          if (downloadMatch) {
-            percentValue = Math.min(100, parseFloat(downloadMatch[1]));
-            const totalValue = parseFloat(downloadMatch[2]);
-            const unit = downloadMatch[3];
-            totalBytes = sizeToBytes(totalValue, unit);
-            downloadedBytes = Math.round(totalBytes * (percentValue / 100));
-          } else {
-            // Fallback: grab any bare percentage in the line
-            const bare = line.match(/(?:^|\s)(\d{1,3}\.?\d*)%/);
-            if (bare) percentValue = Math.min(100, parseFloat(bare[1]));
-          }
-
-          if (percentValue !== null && percentValue !== lastPercent) {
-            lastPercent = percentValue;
-            safeSend('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
-          }
-        });
       });
+      ytDlpProcess.on('error', (err) => reject(err));
+    });
 
-      ytDlpProcess.stderr.on('data', (data) => {
-        console.error('yt-dlp stderr:', data.toString());
-      });
+    if (isCancelled) throw new Error("Download was canceled.");
 
-      await new Promise((resolve, reject) => {
-        ytDlpProcess.on('close', (code) => {
-          if (isCancelled) {
-            reject(new Error('Download was canceled.'));
-          } else if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`yt-dlp exited with code ${code}`));
-          }
-        });
-        ytDlpProcess.on('error', (err) => reject(err));
-      });
+    console.log('Download complete! File saved at:', filePath);
 
-      if (isCancelled) throw new Error("Download was canceled.");
+    const finalSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    safeSend("download-progress", {
+      percent: 100,
+      downloadedBytes: finalSize,
+      totalBytes: finalSize,
+      stage: 'done',
+    });
 
-      console.log('Download complete! File saved at:', filePath);
+    // Add to history
+    const history = store.get('downloadHistory', []);
+    const label = type === 'mp3' ? 'AUDIO' : qualityLabel;
+    const newHistoryItem = {
+      id: videoId,
+      title,
+      thumbnailUrl,
+      url,
+      format: `${label} (${type.toUpperCase()})`,
+      path: filePath,
+      timestamp: new Date().toISOString(),
+    };
+    const updatedHistory = [newHistoryItem, ...history.filter(h => h.id !== videoId || h.path !== filePath)];
+    store.set('downloadHistory', updatedHistory);
 
-      const finalSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
-      safeSend("download-progress", {
-        percent: 100,
-        downloadedBytes: finalSize,
-        totalBytes: finalSize,
-        stage: 'done',
-      });
+    return { success: true, path: filePath };
 
-        // Add to history
-        const history = store.get('downloadHistory', []);
-        const label = type === 'mp3' ? 'AUDIO' : qualityLabel;
-        const newHistoryItem = {
-            id: videoId,
-            title,
-            thumbnailUrl,
-            url,
-            format: `${label} (${type.toUpperCase()})`,
-            path: filePath,
-            timestamp: new Date().toISOString(),
-        };
-        const updatedHistory = [newHistoryItem, ...history.filter(h => h.id !== videoId || h.path !== filePath)];
-        store.set('downloadHistory', updatedHistory);
-
-        return { success: true, path: filePath };
-
-    } catch (err) {
-      // Always delete incomplete file if download was canceled or failed
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-          console.log('Deleted incomplete file after cancel or error:', filePath);
-        } catch (delErr) {
-          console.error('Failed to delete incomplete file after cancel or error:', delErr);
-        }
+  } catch (err) {
+    // Always delete incomplete file if download was canceled or failed
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log('Deleted incomplete file after cancel or error:', filePath);
+      } catch (delErr) {
+        console.error('Failed to delete incomplete file after cancel or error:', delErr);
       }
-      return { success: false, error: err.message };
-    } finally {
-      // Defensive: ensure incomplete file is deleted if canceled
-      if (isCancelled && fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-          console.log('Deleted incomplete file in finally after cancel:', filePath);
-        } catch (delErr) {
-          console.error('Failed to delete incomplete file in finally after cancel:', delErr);
-        }
-      }
-      currentDownloadProcess = null;
     }
+    return { success: false, error: err.message };
+  } finally {
+    // Defensive: ensure incomplete file is deleted if canceled
+    if (isCancelled && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log('Deleted incomplete file in finally after cancel:', filePath);
+      } catch (delErr) {
+        console.error('Failed to delete incomplete file in finally after cancel:', delErr);
+      }
+    }
+    currentDownloadProcess = null;
+  }
 });

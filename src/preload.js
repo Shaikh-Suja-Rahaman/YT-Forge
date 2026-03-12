@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners('ytdlp-update-status');
     ipcRenderer.on('ytdlp-update-status', (_event, value) => callback(value));
   },
+  getYtDlpStatus: () => ipcRenderer.invoke('get-ytdlp-status'),
   // App auto-update APIs
   checkForAppUpdate: () => ipcRenderer.invoke('check-for-app-update'),
   downloadAppUpdate: () => ipcRenderer.send('download-app-update'),
