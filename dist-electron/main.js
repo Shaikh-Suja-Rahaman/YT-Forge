@@ -102,7 +102,7 @@ function updateYtDlp() {
   isUpdatingYtDlp = true;
   console.log("Checking for yt-dlp updates...");
   safeSend("ytdlp-update-status", { updating: true });
-  execFile(ytDlpBinaryPath, ["-U"], (err, stdout, stderr) => {
+  execFile(ytDlpBinaryPath, ["-U"], { windowsHide: true }, (err, stdout, stderr) => {
     isUpdatingYtDlp = false;
     const updated = stdout && stdout.includes("Updated yt-dlp");
     safeSend("ytdlp-update-status", { updating: false, updated });
@@ -120,7 +120,7 @@ function updateYtDlp() {
       }
     }
     if (process.platform === "darwin") {
-      execFile("xattr", ["-dr", "com.apple.quarantine", ytDlpBinaryPath], (xattrErr) => {
+      execFile("xattr", ["-dr", "com.apple.quarantine", ytDlpBinaryPath], { windowsHide: true }, (xattrErr) => {
         if (xattrErr) console.log("xattr quarantine clear (non-critical):", xattrErr.message);
       });
     }
@@ -290,7 +290,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
         url,
         "--dump-json",
         ...BASE_ARGS
-      ], { env: getYtDlpEnv() });
+      ], { env: getYtDlpEnv(), windowsHide: true });
       currentInfoFetchProcess = proc;
       let out = "";
       let err = "";
@@ -437,7 +437,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           }
         }
         if (process.platform === "win32") {
-          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"]);
+          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"], { windowsHide: true });
         } else {
           try {
             process.kill(-ytDlpProcess.pid, "SIGTERM");
@@ -530,7 +530,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       args.push("--merge-output-format", "mp4");
     }
     console.log("Starting yt-dlp with command:", ytDlpBinaryPath, args.join(" "));
-    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
+    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true, windowsHide: true });
     safeSend("download-progress", { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: "starting" });
     let lastPercent = -1;
     let stdoutBuf = "";
