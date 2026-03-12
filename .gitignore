@@ -101,3 +101,8 @@ out/
 *.zip
 *.deb
 *.exe
+*.msi
+*.dll
+*.pdb
+*.7z
+*.tar.gz

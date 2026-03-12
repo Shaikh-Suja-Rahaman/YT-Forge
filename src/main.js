@@ -144,7 +144,7 @@ function updateYtDlp() {
   isUpdatingYtDlp = true;
   console.log('Checking for yt-dlp updates...');
   safeSend('ytdlp-update-status', { updating: true });
-  execFile(ytDlpBinaryPath, ['-U'], (err, stdout, stderr) => {
+  execFile(ytDlpBinaryPath, ['-U'], { windowsHide: true }, (err, stdout, stderr) => {
     isUpdatingYtDlp = false;
     const updated = stdout && stdout.includes('Updated yt-dlp');
     safeSend('ytdlp-update-status', { updating: false, updated });
@@ -166,7 +166,7 @@ function updateYtDlp() {
 
     // On macOS, clear quarantine flag so Gatekeeper doesn't block the updated binary
     if (process.platform === 'darwin') {
-      execFile('xattr', ['-dr', 'com.apple.quarantine', ytDlpBinaryPath], (xattrErr) => {
+      execFile('xattr', ['-dr', 'com.apple.quarantine', ytDlpBinaryPath], { windowsHide: true }, (xattrErr) => {
         if (xattrErr) console.log('xattr quarantine clear (non-critical):', xattrErr.message);
       });
     }
@@ -373,7 +373,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
         url,
         '--dump-json',
         ...BASE_ARGS,
-      ], { env: getYtDlpEnv() });
+      ], { env: getYtDlpEnv(), windowsHide: true });
       currentInfoFetchProcess = proc;
       let out = '';
       let err = '';
@@ -524,7 +524,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
                     try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
                 }
                 if (process.platform === 'win32') {
-                    spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
+                    spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t'], { windowsHide: true });
                 } else {
                     // Kill the entire process group
                     try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
@@ -626,7 +626,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
       // Spawn in its own process group (detached) so SIGSTOP/SIGCONT
       // can freeze/resume the entire group via negative PID
-      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
+      ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true, windowsHide: true });
 
       // Send an initial "started" event so the UI shows activity immediately
       safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
