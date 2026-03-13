@@ -398,6 +398,47 @@ ipcMain.on("cancel-info-fetch", () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Helper: run yt-dlp --dump-json and return the parsed JSON.
+// extraArgs is appended after BASE_ARGS (e.g. player_client overrides).
+// ---------------------------------------------------------------------------
+async function runYtDlpJson(url, extraArgs = []) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ytDlpBinaryPath, [
+      url,
+      '--dump-json',
+      ...BASE_ARGS,
+      ...extraArgs,
+    ], { env: getYtDlpEnv() });
+    currentInfoFetchProcess = proc;
+    let out = '';
+    let err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', code => {
+      currentInfoFetchProcess = null;
+      if (code === 0) resolve(JSON.parse(out));
+      else reject(new Error(err || `yt-dlp exited with code ${code}`));
+    });
+    proc.on('error', (e) => {
+      currentInfoFetchProcess = null;
+      reject(e);
+    });
+  });
+}
+
+/**
+ * Returns true when yt-dlp handed back a "basic" YouTube player response —
+ * i.e. very few formats or only muxed (combined) streams with no adaptive
+ * video-only tracks. In this case we should retry with a different player client.
+ */
+function isBasicPlayerResponse(formats) {
+  if (formats.length < 10) return true;
+  // If every video format also has audio, it's muxed-only (basic response)
+  const adaptiveVideo = formats.some(f => f.vcodec && f.vcodec !== 'none' && f.acodec === 'none');
+  return !adaptiveVideo;
+}
+
 ipcMain.handle("get-video-info", async (event, url) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
@@ -405,32 +446,25 @@ ipcMain.handle("get-video-info", async (event, url) => {
   try {
     console.log('Fetching video info for:', url);
 
-    // Use execPromise with --dump-json directly — avoids yt-dlp-wrap's internal
-    // "-f best" flag which limits results to a single 360p pre-merged stream
-    const stdout = await new Promise((resolve, reject) => {
-      const proc = spawn(ytDlpBinaryPath, [
-        url,
-        '--dump-json',
-        ...BASE_ARGS,
-      ], { env: getYtDlpEnv() });
-      currentInfoFetchProcess = proc;
-      let out = '';
-      let err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('close', code => {
-        currentInfoFetchProcess = null;
-        if (code === 0) resolve(out);
-        else reject(new Error(err || `yt-dlp exited with code ${code}`));
-      });
-      proc.on('error', (e) => {
-        currentInfoFetchProcess = null;
-        reject(e);
-      });
-    });
-
-    const info = JSON.parse(stdout);
+    let info = await runYtDlpJson(url);
     console.log('Total formats available:', info.formats.length);
+
+    // YouTube occasionally returns a stripped "basic" player response on the
+    // first cold request (e.g. only the single 360p muxed stream, fmt 18).
+    // Detect this and retry once with an explicit player client that reliably
+    // returns the full adaptive format list.
+    if (isBasicPlayerResponse(info.formats)) {
+      console.log('Basic player response detected — retrying with android+web player client…');
+      try {
+        info = await runYtDlpJson(url, [
+          '--extractor-args', 'youtube:player_client=android,web',
+        ]);
+        console.log('Retry: total formats available:', info.formats.length);
+      } catch (retryErr) {
+        // Retry failed — carry on with whatever we got the first time
+        console.warn('Retry failed, falling back to initial result:', retryErr.message);
+      }
+    }
 
     // Debug: log raw format dimensions to help diagnose issues
     info.formats.forEach(f => {
@@ -523,6 +557,49 @@ ipcMain.handle("download-thumbnail", async (event, { url, title }) => {
     request.on('error', (err) => { fs.unlink(filePath, () => { }); resolve({ success: false, error: err.message }); });
   });
 });
+
+/**
+ * Deletes the final output file AND any yt-dlp intermediate temp files.
+ * When downloading adaptive streams yt-dlp writes intermediate files like:
+ *   "My Video.f315.webm"  (video track)
+ *   "My Video.f140.m4a"  (audio track)
+ * alongside the final "My Video.mp4". On cancel these are left behind unless
+ * we clean them up explicitly.
+ */
+function deletePartialDownloadFiles(filePath) {
+  // 1. Delete the final output file if it exists
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('Deleted partial file:', filePath);
+    }
+  } catch (err) {
+    console.error('Failed to delete partial file:', filePath, err.message);
+  }
+
+  // 2. Also clean up yt-dlp's adaptive-stream temp files in the same directory.
+  //    They are named:  {base_without_ext}.f{format_id}.{ext}
+  //    e.g. "My Video.f315.webm", "My Video.f140.m4a"
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath, path.extname(filePath)); // e.g. "My Video"
+  const tempPrefix = base + '.f'; // files start with this prefix
+  try {
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      if (entry.startsWith(tempPrefix) && entry !== path.basename(filePath)) {
+        const tempPath = path.join(dir, entry);
+        try {
+          fs.unlinkSync(tempPath);
+          console.log('Deleted yt-dlp temp file:', tempPath);
+        } catch (e) {
+          console.error('Failed to delete yt-dlp temp file:', tempPath, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to scan directory for temp files:', e.message);
+  }
+}
 
 ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl }) => {
   if (isUpdatingYtDlp) {
@@ -774,25 +851,11 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     return { success: true, path: filePath };
 
   } catch (err) {
-    // Always delete incomplete file if download was canceled or failed
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-        console.log('Deleted incomplete file after cancel or error:', filePath);
-      } catch (delErr) {
-        console.error('Failed to delete incomplete file after cancel or error:', delErr);
-      }
-    }
     return { success: false, error: err.message };
   } finally {
-    // Defensive: ensure incomplete file is deleted if canceled
-    if (isCancelled && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-        console.log('Deleted incomplete file in finally after cancel:', filePath);
-      } catch (delErr) {
-        console.error('Failed to delete incomplete file in finally after cancel:', delErr);
-      }
+    // Defensive cleanup: always wipe partial + temp files on cancel
+    if (isCancelled) {
+      deletePartialDownloadFiles(filePath);
     }
     currentDownloadProcess = null;
   }

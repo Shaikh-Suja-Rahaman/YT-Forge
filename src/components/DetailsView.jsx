@@ -4,6 +4,17 @@ import { formatBytes } from '../utils/formatBytes';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -257,13 +268,33 @@ const DetailsView = () => {
                       Waiting...
                     </Button>
                   )}
-                  <Button
-                    variant="destructive"
-                    className="h-9 px-4"
-                    onClick={handleCancelDownload}
-                  >
-                    Cancel
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        className="h-9 px-4"
+                      >
+                        Cancel
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel download?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          The download will be stopped and the partial file will be deleted. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep downloading</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleCancelDownload}
+                          className="bg-destructive text-white hover:bg-destructive/80"
+                        >
+                          Yes, cancel
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
                 {/* Network-paused info badge */}
                 {isPaused && pauseReason === 'network' && (
@@ -301,15 +332,13 @@ const DetailsView = () => {
           {/* Progress Area (pushed to bottom) */}
           {isDownloading && (
             <div className="mt-auto pt-4">
-              <div className={`rounded-lg border p-3 ${
-                isPaused
+              <div className={`rounded-lg border p-3 ${isPaused
                   ? 'border-amber-500/20 bg-amber-500/5'
                   : 'border-border/30 bg-secondary/30'
-              }`}>
+                }`}>
                 <div className="flex justify-between items-center gap-3 mb-2 min-w-0">
-                  <span className={`text-xs font-medium whitespace-nowrap ${
-                    isPaused ? 'text-amber-400' : 'text-foreground'
-                  }`}>
+                  <span className={`text-xs font-medium whitespace-nowrap ${isPaused ? 'text-amber-400' : 'text-foreground'
+                    }`}>
                     {isPaused
                       ? pauseReason === 'network'
                         ? 'Waiting for connection...'

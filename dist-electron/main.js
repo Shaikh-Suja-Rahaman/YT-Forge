@@ -309,39 +309,59 @@ ipcMain.on("cancel-info-fetch", () => {
     currentInfoFetchProcess = null;
   }
 });
+async function runYtDlpJson(url, extraArgs = []) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ytDlpBinaryPath, [
+      url,
+      "--dump-json",
+      ...BASE_ARGS,
+      ...extraArgs
+    ], { env: getYtDlpEnv() });
+    currentInfoFetchProcess = proc;
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (d) => {
+      out += d.toString();
+    });
+    proc.stderr.on("data", (d) => {
+      err += d.toString();
+    });
+    proc.on("close", (code) => {
+      currentInfoFetchProcess = null;
+      if (code === 0) resolve(JSON.parse(out));
+      else reject(new Error(err || `yt-dlp exited with code ${code}`));
+    });
+    proc.on("error", (e) => {
+      currentInfoFetchProcess = null;
+      reject(e);
+    });
+  });
+}
+function isBasicPlayerResponse(formats) {
+  if (formats.length < 10) return true;
+  const adaptiveVideo = formats.some((f) => f.vcodec && f.vcodec !== "none" && f.acodec === "none");
+  return !adaptiveVideo;
+}
 ipcMain.handle("get-video-info", async (event, url) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: "yt-dlp is updating in the background, please try again in a moment." };
   }
   try {
     console.log("Fetching video info for:", url);
-    const stdout = await new Promise((resolve, reject) => {
-      const proc = spawn(ytDlpBinaryPath, [
-        url,
-        "--dump-json",
-        ...BASE_ARGS
-      ], { env: getYtDlpEnv() });
-      currentInfoFetchProcess = proc;
-      let out = "";
-      let err = "";
-      proc.stdout.on("data", (d) => {
-        out += d.toString();
-      });
-      proc.stderr.on("data", (d) => {
-        err += d.toString();
-      });
-      proc.on("close", (code) => {
-        currentInfoFetchProcess = null;
-        if (code === 0) resolve(out);
-        else reject(new Error(err || `yt-dlp exited with code ${code}`));
-      });
-      proc.on("error", (e) => {
-        currentInfoFetchProcess = null;
-        reject(e);
-      });
-    });
-    const info = JSON.parse(stdout);
+    let info = await runYtDlpJson(url);
     console.log("Total formats available:", info.formats.length);
+    if (isBasicPlayerResponse(info.formats)) {
+      console.log("Basic player response detected — retrying with android+web player client…");
+      try {
+        info = await runYtDlpJson(url, [
+          "--extractor-args",
+          "youtube:player_client=android,web"
+        ]);
+        console.log("Retry: total formats available:", info.formats.length);
+      } catch (retryErr) {
+        console.warn("Retry failed, falling back to initial result:", retryErr.message);
+      }
+    }
     info.formats.forEach((f) => {
       if (f.vcodec && f.vcodec !== "none") {
         console.log(`  fmt ${f.format_id}: ${f.width}x${f.height} vcodec=${f.vcodec} acodec=${f.acodec} size=${f.filesize || f.filesize_approx || "?"}`);
@@ -430,6 +450,35 @@ ipcMain.handle("download-thumbnail", async (event, { url, title }) => {
     });
   });
 });
+function deletePartialDownloadFiles(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log("Deleted partial file:", filePath);
+    }
+  } catch (err) {
+    console.error("Failed to delete partial file:", filePath, err.message);
+  }
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath, path.extname(filePath));
+  const tempPrefix = base + ".f";
+  try {
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      if (entry.startsWith(tempPrefix) && entry !== path.basename(filePath)) {
+        const tempPath = path.join(dir, entry);
+        try {
+          fs.unlinkSync(tempPath);
+          console.log("Deleted yt-dlp temp file:", tempPath);
+        } catch (e) {
+          console.error("Failed to delete yt-dlp temp file:", tempPath, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to scan directory for temp files:", e.message);
+  }
+}
 ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl }) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: "yt-dlp is updating in the background, please try again in a moment." };
@@ -647,23 +696,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     store.set("downloadHistory", updatedHistory);
     return { success: true, path: filePath };
   } catch (err) {
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-        console.log("Deleted incomplete file after cancel or error:", filePath);
-      } catch (delErr) {
-        console.error("Failed to delete incomplete file after cancel or error:", delErr);
-      }
-    }
     return { success: false, error: err.message };
   } finally {
-    if (isCancelled && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-        console.log("Deleted incomplete file in finally after cancel:", filePath);
-      } catch (delErr) {
-        console.error("Failed to delete incomplete file in finally after cancel:", delErr);
-      }
+    if (isCancelled) {
+      deletePartialDownloadFiles(filePath);
     }
     currentDownloadProcess = null;
   }
