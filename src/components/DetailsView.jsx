@@ -36,6 +36,17 @@ import {
   WifiOff,
 } from 'lucide-react';
 
+const formatTime = (totalSeconds) => {
+  if (!totalSeconds || isNaN(totalSeconds) || totalSeconds < 0) return '00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 const DetailsView = () => {
   const {
     videoDetails: details,
@@ -56,6 +67,11 @@ const DetailsView = () => {
   const [downloadedFilePath, setDownloadedFilePath] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [pauseReason, setPauseReason] = useState(null); // null | 'user' | 'network'
+
+  // New progress stats
+  const [speed, setSpeed] = useState(0);
+  const [eta, setEta] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
   const isVP9 = useMemo(() => {
     if (selectedType === 'mp3') return false;
@@ -90,9 +106,13 @@ const DetailsView = () => {
         return;
       }
 
-      const { percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting' } = data;
+      const { percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting', speed = 0, eta = 0, elapsed = 0 } = data;
       setProgress(percent);
       setDownloadStage(stage);
+      setSpeed(speed);
+      setEta(eta);
+      setElapsed(elapsed);
+
       if (stage === 'merging' || stage === 'processing') {
         setProgressText(stageLabels[stage]);
       } else if (totalBytes > 0) {
@@ -331,7 +351,25 @@ const DetailsView = () => {
 
           {/* Progress Area (pushed to bottom) */}
           {isDownloading && (
-            <div className="mt-auto pt-4">
+            <div className="mt-auto pt-4 flex flex-col gap-2">
+              {/* Stats Row */}
+              {(downloadStage === 'video' || downloadStage === 'audio') && progress > 0 && (
+                <div className="flex bg-secondary/30 border border-border/30 rounded-lg divide-x divide-border/30 overflow-hidden shadow-sm animate-in fade-in duration-200">
+                  <div className="flex-1 px-2 py-1.5 flex flex-col items-center justify-center">
+                    <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground mb-0.5">Speed</span>
+                    <span className="text-xs font-mono tabular-nums font-medium text-foreground">{!isPaused && speed > 0 ? `${formatBytes(speed)}/s` : '--'}</span>
+                  </div>
+                  <div className="flex-1 px-2 py-1.5 flex flex-col items-center justify-center">
+                    <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground mb-0.5">Elapsed</span>
+                    <span className="text-xs font-mono tabular-nums font-medium text-foreground">{formatTime(elapsed)}</span>
+                  </div>
+                  <div className="flex-1 px-2 py-1.5 flex flex-col items-center justify-center">
+                    <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground mb-0.5">Time Left</span>
+                    <span className="text-xs font-mono tabular-nums font-medium text-foreground">{!isPaused && speed > 0 && eta > 0 ? formatTime(eta) : '--:--'}</span>
+                  </div>
+                </div>
+              )}
+
               <div className={`rounded-lg border p-3 ${isPaused
                   ? 'border-amber-500/20 bg-amber-500/5'
                   : 'border-border/30 bg-secondary/30'
@@ -345,7 +383,7 @@ const DetailsView = () => {
                         : 'Paused'
                       : stageLabels[downloadStage] || 'Downloading...'}
                   </span>
-                  <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate min-w-0">
+                  <span className="text-[11px] font-mono tabular-nums tracking-tight text-muted-foreground whitespace-nowrap truncate min-w-0">
                     {progressText}
                   </span>
                 </div>

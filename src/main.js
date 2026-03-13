@@ -631,6 +631,14 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
   let ytDlpProcess = null;
   let downloadStage = 'starting';
 
+  // --- New Variables for Stats ---
+  let downloadStartTime = Date.now();
+  let totalPauseDuration = 0;
+  let pauseStartTime = 0;
+  let speedWindow = []; // Array of { t: number, b: number }
+  let lastPayloadTime = 0;
+  // -------------------------------
+
   currentDownloadProcess = {
     cancel: () => {
       isCancelled = true;
@@ -650,6 +658,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       }
       isPaused = false;
       pauseReason = null;
+      pauseStartTime = 0;
     },
     pause: (reason = 'user') => {
       if (isPaused || !ytDlpProcess || isCancelled) return;
@@ -657,6 +666,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       if (downloadStage === 'merging' || downloadStage === 'processing') return;
       isPaused = true;
       pauseReason = reason;
+      pauseStartTime = Date.now();
       if (process.platform !== 'win32') {
         try {
           // Send SIGSTOP to the entire process group (negative PID)
@@ -675,6 +685,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       if (!isPaused || !ytDlpProcess || isCancelled) return;
       isPaused = false;
       pauseReason = null;
+      if (pauseStartTime) {
+        totalPauseDuration += (Date.now() - pauseStartTime);
+        pauseStartTime = 0;
+      }
       if (process.platform !== 'win32') {
         try {
           process.kill(-ytDlpProcess.pid, 'SIGCONT');
@@ -768,6 +782,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
             downloadStage = stageCount === 1 ? 'video' : 'audio';
           }
           lastPercent = -1;
+          speedWindow = []; // reset moving average on new stage
         } else if (line.includes('[Merger]') || line.includes('[Mux]')) {
           downloadStage = 'merging';
           if (!isPaused) safeSend('download-progress', { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: 'merging' });
@@ -797,9 +812,52 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           if (bare) percentValue = Math.min(100, parseFloat(bare[1]));
         }
 
-        if (percentValue !== null && percentValue !== lastPercent) {
-          lastPercent = percentValue;
-          safeSend('download-progress', { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
+        if (percentValue !== null && downloadedBytes > 0) {
+          const now = Date.now();
+          // Check if we already have an entry for this exact millisecond to prevent divide-by-zero later
+          if (speedWindow.length === 0 || speedWindow[speedWindow.length - 1].t !== now) {
+            speedWindow.push({ t: now, b: downloadedBytes });
+          }
+          // Remove entries older than 10 seconds
+          while (speedWindow.length > 0 && now - speedWindow[0].t > 10000) {
+            speedWindow.shift();
+          }
+        }
+
+        const now = Date.now();
+        // Send payload if percent changed OR if 500ms has elapsed (to guarantee smooth ticking of elapsed time)
+        if ((percentValue !== null && percentValue !== lastPercent) || (now - lastPayloadTime > 500)) {
+          if (percentValue !== null) lastPercent = percentValue;
+          
+          let currentSpeed = 0; // bytes per second
+          let currentEta = 0;   // seconds
+          
+          if (speedWindow.length > 1) {
+            const oldest = speedWindow[0];
+            const newest = speedWindow[speedWindow.length - 1];
+            const timeDiffSec = (newest.t - oldest.t) / 1000;
+            const bytesDiff = newest.b - oldest.b;
+            if (timeDiffSec > 0 && bytesDiff > 0) {
+              currentSpeed = bytesDiff / timeDiffSec;
+              if (totalBytes > downloadedBytes) {
+                currentEta = Math.round((totalBytes - downloadedBytes) / currentSpeed);
+              }
+            }
+          }
+
+          let elapsedSec = Math.floor((now - downloadStartTime - totalPauseDuration) / 1000);
+          if (elapsedSec < 0) elapsedSec = 0;
+
+          lastPayloadTime = now;
+          safeSend('download-progress', { 
+            percent: lastPercent !== -1 ? lastPercent : 0, 
+            downloadedBytes, 
+            totalBytes, 
+            stage: downloadStage,
+            speed: currentSpeed,
+            eta: currentEta,
+            elapsed: elapsedSec
+          });
         }
       });
     });

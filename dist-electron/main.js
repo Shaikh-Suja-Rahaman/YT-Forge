@@ -504,6 +504,11 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
   let pauseReason = null;
   let ytDlpProcess = null;
   let downloadStage = "starting";
+  let downloadStartTime = Date.now();
+  let totalPauseDuration = 0;
+  let pauseStartTime = 0;
+  let speedWindow = [];
+  let lastPayloadTime = 0;
   currentDownloadProcess = {
     cancel: () => {
       isCancelled = true;
@@ -527,12 +532,14 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       }
       isPaused = false;
       pauseReason = null;
+      pauseStartTime = 0;
     },
     pause: (reason = "user") => {
       if (isPaused || !ytDlpProcess || isCancelled) return;
       if (downloadStage === "merging" || downloadStage === "processing") return;
       isPaused = true;
       pauseReason = reason;
+      pauseStartTime = Date.now();
       if (process.platform !== "win32") {
         try {
           process.kill(-ytDlpProcess.pid, "SIGSTOP");
@@ -553,6 +560,10 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       if (!isPaused || !ytDlpProcess || isCancelled) return;
       isPaused = false;
       pauseReason = null;
+      if (pauseStartTime) {
+        totalPauseDuration += Date.now() - pauseStartTime;
+        pauseStartTime = 0;
+      }
       if (process.platform !== "win32") {
         try {
           process.kill(-ytDlpProcess.pid, "SIGCONT");
@@ -629,6 +640,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
             downloadStage = stageCount === 1 ? "video" : "audio";
           }
           lastPercent = -1;
+          speedWindow = [];
         } else if (line.includes("[Merger]") || line.includes("[Mux]")) {
           downloadStage = "merging";
           if (!isPaused) safeSend("download-progress", { percent: -1, downloadedBytes: 0, totalBytes: 0, stage: "merging" });
@@ -651,9 +663,44 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           const bare = line.match(/(?:^|\s)(\d{1,3}\.?\d*)%/);
           if (bare) percentValue = Math.min(100, parseFloat(bare[1]));
         }
-        if (percentValue !== null && percentValue !== lastPercent) {
-          lastPercent = percentValue;
-          safeSend("download-progress", { percent: percentValue, downloadedBytes, totalBytes, stage: downloadStage });
+        if (percentValue !== null && downloadedBytes > 0) {
+          const now2 = Date.now();
+          if (speedWindow.length === 0 || speedWindow[speedWindow.length - 1].t !== now2) {
+            speedWindow.push({ t: now2, b: downloadedBytes });
+          }
+          while (speedWindow.length > 0 && now2 - speedWindow[0].t > 1e4) {
+            speedWindow.shift();
+          }
+        }
+        const now = Date.now();
+        if (percentValue !== null && percentValue !== lastPercent || now - lastPayloadTime > 500) {
+          if (percentValue !== null) lastPercent = percentValue;
+          let currentSpeed = 0;
+          let currentEta = 0;
+          if (speedWindow.length > 1) {
+            const oldest = speedWindow[0];
+            const newest = speedWindow[speedWindow.length - 1];
+            const timeDiffSec = (newest.t - oldest.t) / 1e3;
+            const bytesDiff = newest.b - oldest.b;
+            if (timeDiffSec > 0 && bytesDiff > 0) {
+              currentSpeed = bytesDiff / timeDiffSec;
+              if (totalBytes > downloadedBytes) {
+                currentEta = Math.round((totalBytes - downloadedBytes) / currentSpeed);
+              }
+            }
+          }
+          let elapsedSec = Math.floor((now - downloadStartTime - totalPauseDuration) / 1e3);
+          if (elapsedSec < 0) elapsedSec = 0;
+          lastPayloadTime = now;
+          safeSend("download-progress", {
+            percent: lastPercent !== -1 ? lastPercent : 0,
+            downloadedBytes,
+            totalBytes,
+            stage: downloadStage,
+            speed: currentSpeed,
+            eta: currentEta,
+            elapsed: elapsedSec
+          });
         }
       });
     });
