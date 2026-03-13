@@ -1,5 +1,6 @@
 appId: com.suja.ytforge
 productName: YT-FORGE
+icon: build/icon.png
 directories:
   output: release
 
