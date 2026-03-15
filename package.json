@@ -12,7 +12,6 @@
     "build": "npm run build:renderer && npm run build:main && npm run build:preload",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:mac:intel": "npm run build && electron-builder --mac --x64",
     "dist:mac:arm": "npm run build && electron-builder --mac --arm64",
     "dist:win": "npm run build && electron-builder --win --x64 --arm64",
     "dist:linux": "npm run build && electron-builder --linux --x64",
