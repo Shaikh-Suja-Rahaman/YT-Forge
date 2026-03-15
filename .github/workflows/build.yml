@@ -15,7 +15,7 @@ jobs:
           - os: macos-latest
             script: npm run dist:mac:arm
           # Intel Mac (x64)
-          - os: macos-13
+          - os: macos-12
             script: npm run dist:mac:intel
           # Windows (Builds both x64 and arm64 automatically)
           - os: windows-latest
