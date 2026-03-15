@@ -32,17 +32,17 @@ Unlike many downloaders, YT-FORGE prioritizes **H.264 video and AAC audio** form
 
 ## Features
 
-<img src="https://api.iconify.design/lucide/zap.svg?color=%23737373" width="18"/> **Fast Downloads**  
-Powered by the battle-tested `yt-dlp` engine.
+- **Fast Downloads**  
+  Powered by the battle-tested `yt-dlp` engine.
 
-<img src="https://api.iconify.design/lucide/layout-dashboard.svg?color=%23737373" width="18"/> **Minimal Interface**  
-Clean dark UI built with React and Shadcn UI.
+- **Minimal Interface**  
+  Clean dark UI built with React and Shadcn UI.
 
-<img src="https://api.iconify.design/lucide/film.svg?color=%23737373" width="18"/> **Editor-Friendly Formats**  
-Automatically prefers H.264 + AAC (MP4) over AV1/VP9.
+- **Editor-Friendly Formats**  
+  Automatically prefers H.264 + AAC (MP4) over AV1/VP9.
 
-<img src="https://api.iconify.design/lucide/shield-check.svg?color=%23737373" width="18"/> **No Ads. No Tracking.**  
-Fully open-source and transparent.
+- **No Ads. No Tracking.**  
+  Fully open-source and transparent.
 
 
 ---
