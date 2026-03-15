@@ -10,7 +10,7 @@
 		</data>
 		<key>Resources/app.asar</key>
 		<data>
-		/C06Nj/ae/9pZoRtP08zpHqGKmo=
+		A7V2VK5lOhxZhdHY8mCjfMU9gyY=
 		</data>
 		<key>Resources/app.asar.unpacked/node_modules/ffmpeg-static/LICENSE</key>
 		<data>
@@ -86,11 +86,11 @@
 		</data>
 		<key>Resources/bin/yt-dlp_macos</key>
 		<data>
-		EQmRBs6y12+wLhZr3uV8ShxEvy8=
+		opmYvrs5FZZeL8San4zSw85pauA=
 		</data>
-		<key>Resources/electron.icns</key>
+		<key>Resources/icon.icns</key>
 		<data>
-		yBsjVAviSqArVhNx5Jx3gIgxq5A=
+		9a28HF0cv/Fa4BDhve9iESUetVU=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -135,37 +135,37 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			0dLJ/HrOODyh2mXilW0Kkbh832g=
+			67EIHADiZEc5cmDYRZfR42JVmXE=
 			</data>
 			<key>requirement</key>
-			<string>cdhash H"d1d2c9fc7ace383ca1da65e2956d0a91b87cdf68"</string>
+			<string>cdhash H"ebb1081c00e26447397260d84597d1e362559971"</string>
 		</dict>
 		<key>Frameworks/YT-FORGE Helper (Plugin).app</key>
 		<dict>
 			<key>cdhash</key>
 			<data>
-			WkWtf/bFmNNKlZDUHUVvYldsfdA=
+			0wpzg9h8Oe5ckqjfZRD+ssl9FOU=
 			</data>
 			<key>requirement</key>
-			<string>cdhash H"5a45ad7ff6c598d34a9590d41d456f62576c7dd0"</string>
+			<string>cdhash H"d30a7383d87c39ee5c92a8df6510feb2c97d14e5"</string>
 		</dict>
 		<key>Frameworks/YT-FORGE Helper (Renderer).app</key>
 		<dict>
 			<key>cdhash</key>
 			<data>
-			h5e8J7y8QF5iDhQu7Wpys8xkQgo=
+			pUltVnyauj2JepniI1uS8iuHuG0=
 			</data>
 			<key>requirement</key>
-			<string>cdhash H"8797bc27bcbc405e620e142eed6a72b3cc64420a"</string>
+			<string>cdhash H"a5496d567c9aba3d897a99e2235b92f22b87b86d"</string>
 		</dict>
 		<key>Frameworks/YT-FORGE Helper.app</key>
 		<dict>
 			<key>cdhash</key>
 			<data>
-			ELc8UQsAU7RKoebdec3pB4L5eEY=
+			Fsnd07rIGtrtofyVR6rsROErIdA=
 			</data>
 			<key>requirement</key>
-			<string>cdhash H"10b73c510b0053b44aa1e6dd79cde90782f97846"</string>
+			<string>cdhash H"16c9ddd3bac81adaeda1fc9547aaec44e12b21d0"</string>
 		</dict>
 		<key>Resources/app-update.yml</key>
 		<dict>
@@ -178,7 +178,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			pw6LnH8ZxgBijZ8TViEMvP3sVYe7mugMHeAAHLTeZv4=
+			//20SbVhWdj5MpX0HhnS0p7Wkcl2ykCnOtPfdCPUOiA=
 			</data>
 		</dict>
 		<key>Resources/app.asar.unpacked/node_modules/ffmpeg-static/LICENSE</key>
@@ -311,14 +311,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			9Hwy/BZPsNC/2zDC6LrXgUZLAVHK/c4rHz7fPO3cFYA=
+			TvchalqKmbXb6/EqCPnuw1f+6V6qHHIJGYi8Bh3zXN4=
 			</data>
 		</dict>
-		<key>Resources/electron.icns</key>
+		<key>Resources/icon.icns</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			Wpp41UwVf1VnKv6jcDdGSFiof9XydvyCBnh/Nm7WhM8=
+			RLo5lq8nUpDefejRu4jJPCi00se1OXwVAB6BcLzc1xU=
 			</data>
 		</dict>
 	</dict>

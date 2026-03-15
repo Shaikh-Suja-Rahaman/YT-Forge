@@ -3,6 +3,7 @@ directories:
   buildResources: build
 appId: com.suja.ytforge
 productName: YT-FORGE
+icon: build/icon.png
 files:
   - filter:
       - dist-electron/**/*

@@ -1,7 +1,7 @@
 {
   "name": "yt-forge",
   "productName": "YT-FORGE",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A desktop YouTube video downloader powered by yt-dlp",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -12,8 +12,11 @@
     "build": "npm run build:renderer && npm run build:main && npm run build:preload",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:mac:intel": "npm run build && electron-builder --mac --x64",
+    "dist:mac:arm": "npm run build && electron-builder --mac --arm64",
+    "dist:win": "npm run build && electron-builder --win --x64 --arm64",
+    "dist:linux": "npm run build && electron-builder --linux --x64",
+    "dist:linux:arm": "npm run build && electron-builder --linux --arm64",
     "publish": "npm run build && electron-builder --publish always"
   },
   "keywords": [],

@@ -1,0 +1,66 @@
+name: Build and Release YT-FORGE
+
+on:
+  workflow_dispatch: # Allows you to manually trigger the build from GitHub UI
+
+jobs:
+  release:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        include:
+          # Apple Silicon Mac (arm64)
+          - os: macos-latest
+            script: npm run dist:mac:arm
+          # Intel Mac (x64)
+          - os: macos-13
+            script: npm run dist:mac:intel
+          # Windows (Builds both x64 and arm64 automatically)
+          - os: windows-latest
+            script: npm run dist:win
+          # Linux PC (x64)
+          - os: ubuntu-latest
+            script: npm run dist:linux
+          # Linux ARM (Raspberry Pi, ARM Servers)
+          - os: ubuntu-24.04-arm
+            script: npm run dist:linux:arm
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download yt-dlp (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          mkdir -p bin
+          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos -o bin/yt-dlp_macos
+          chmod +x bin/yt-dlp_macos
+
+      - name: Download yt-dlp (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          mkdir -p bin
+          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o bin/yt-dlp_linux
+          chmod +x bin/yt-dlp_linux
+
+      - name: Download yt-dlp (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: bash
+        run: |
+          mkdir -p bin
+          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o bin/yt-dlp.exe
+
+      - name: Install Code Dependencies
+        run: npm ci
+
+      - name: Build & Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: ${{ matrix.script }}

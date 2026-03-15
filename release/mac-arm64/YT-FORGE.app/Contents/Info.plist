@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>YT-FORGE</string>
     <key>CFBundleIconFile</key>
-    <string>electron.icns</string>
+    <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.suja.ytforge</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>DTCompiler</key>
     <string>com.apple.compilers.llvm.clang.1_0</string>
     <key>DTSDKBuild</key>
@@ -37,7 +37,7 @@
         <key>algorithm</key>
         <string>SHA256</string>
         <key>hash</key>
-        <string>e56b1506ecb1ad04a9e4cec825aeb10471e34f7eb3fd318b0068b59580245962</string>
+        <string>a70145d755dfd6daa567556f6ee9fd8cfbdac364f8c70d6c5fe225ea7e9f07d8</string>
       </dict>
     </dict>
     <key>LSApplicationCategoryType</key>
