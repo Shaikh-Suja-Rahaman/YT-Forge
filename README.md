@@ -32,16 +32,16 @@ Unlike many downloaders, YT-FORGE prioritizes **H.264 video and AAC audio** form
 
 ## Features
 
-<img src="https://api.iconify.design/lucide/zap.svg" width="18"/> **Fast Downloads**  
+<img src="https://api.iconify.design/lucide/zap.svg?color=%23737373" width="18"/> **Fast Downloads**  
 Powered by the battle-tested `yt-dlp` engine.
 
-<img src="https://api.iconify.design/lucide/layout-dashboard.svg" width="18"/> **Minimal Interface**  
+<img src="https://api.iconify.design/lucide/layout-dashboard.svg?color=%23737373" width="18"/> **Minimal Interface**  
 Clean dark UI built with React and Shadcn UI.
 
-<img src="https://api.iconify.design/lucide/film.svg" width="18"/> **Editor-Friendly Formats**  
+<img src="https://api.iconify.design/lucide/film.svg?color=%23737373" width="18"/> **Editor-Friendly Formats**  
 Automatically prefers H.264 + AAC (MP4) over AV1/VP9.
 
-<img src="https://api.iconify.design/lucide/shield-check.svg" width="18"/> **No Ads. No Tracking.**  
+<img src="https://api.iconify.design/lucide/shield-check.svg?color=%23737373" width="18"/> **No Ads. No Tracking.**  
 Fully open-source and transparent.
 
 
@@ -50,11 +50,9 @@ Fully open-source and transparent.
 ## Interface
 
 <p align="center">
-  <img src="assets/screenshot1.png" width="85%" />
-</p>
-
-<p align="center">
-  <img src="assets/screenshot2.png" width="85%" />
+  <img src="assets/screenshot1.png" width="49%" />
+  &nbsp;
+  <img src="assets/screenshot2.png" width="49%" />
 </p>
 
 ---
