@@ -1,77 +1,105 @@
-# YT-FORGE
+<div align="center">
+  <img src="assets/icon.png" alt="YT-FORGE Icon" width="120" />
 
-A desktop YouTube video downloader powered by yt-dlp and Electron.
+  <h1>YT-FORGE</h1>
 
----
+  <p>
+    A fast, modern desktop YouTube downloader designed for creators and editors.
+  </p>
 
-## 🚀 Getting Started (For Developers)
+  <p>
+    macOS • Windows • Linux <br/>
 
-### Prerequisites
-- **Node.js** (v18 or newer recommended)
-- **npm** (comes with Node.js)
-- **Git**
-- **yt-dlp** binary for your platform (see `bin/` folder)
-
-### Clone the Repository
-```sh
-git clone https://github.com/Shaikh-Suja-Rahaman/YT-Forge.git
-cd YT-Forge
-```
-
-### Install Dependencies
-```sh
-npm install
-```
-
-### Run the App in Development Mode
-```sh
-npm start
-```
-This will launch the Electron app with hot-reloading for the renderer.
-
-### Build for Production
-#### Build for Production
-
-- **All platforms:**
-  ```sh
-  npm run dist
-  ```
-- **macOS only:**
-  ```sh
-  npm run dist:mac
-  ```
-- **Windows only:**
-  ```sh
-  npm run dist:win
-  ```
-  > **Note:** On Windows, you must enable [Developer Mode](https://docs.microsoft.com/en-us/windows/developer-mode/) to allow symlink creation and successful code signing. Go to Settings → Update & Security → For Developers → Enable Developer Mode before building.
-  > The signed installer (e.g., `YT-FORGE Setup 1.0.0.exe`) will be output in the `release/` folder.
-- **Linux only:**
-  ```sh
-  npm run dist:linux
-  ```
-
-The output will be in the `dist-electron/` and `release/` folders (these are git-ignored).
+  </p>
+</div>
 
 ---
 
-## 📦 Download Pre-built Binaries
-Pre-built binaries (e.g., `.dmg`, `.exe`, `.AppImage`) are available on the [GitHub Releases](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases) page.
-If you build locally, do **not** commit large binaries to git. Upload Windows installers to GitHub Releases for distribution.
+## Overview
+
+**YT-FORGE** is a lightweight desktop application built on top of the powerful  
+[`yt-dlp`](https://github.com/yt-dlp/yt-dlp) engine.
+
+It focuses on three things:
+
+• Speed  
+• Simplicity  
+• Editor-friendly downloads
+
+Unlike many downloaders, YT-FORGE prioritizes **H.264 video and AAC audio** formats, ensuring smooth playback and seamless compatibility with professional editing software such as **Premiere Pro**, **Final Cut Pro**, and **DaVinci Resolve**.
 
 ---
 
-## 🛠️ Contributing
-- Please open issues or pull requests for bugs, features, or improvements.
-- Make sure to follow the code style and test your changes.
+## Features
+
+<img src="https://api.iconify.design/lucide/zap.svg" width="18"/> **Fast Downloads**  
+Powered by the battle-tested `yt-dlp` engine.
+
+<img src="https://api.iconify.design/lucide/layout-dashboard.svg" width="18"/> **Minimal Interface**  
+Clean dark UI built with React and Shadcn UI.
+
+<img src="https://api.iconify.design/lucide/film.svg" width="18"/> **Editor-Friendly Formats**  
+Automatically prefers H.264 + AAC (MP4) over AV1/VP9.
+
+<img src="https://api.iconify.design/lucide/shield-check.svg" width="18"/> **No Ads. No Tracking.**  
+Fully open-source and transparent.
+
 
 ---
 
-## ⚠️ Note
-- Large build artifacts and binaries are **not** tracked in git. Only source code is included in this repository.
-- To test the app, clone the repo and follow the build instructions above.
+## Interface
+
+<p align="center">
+  <img src="assets/screenshot1.png" width="85%" />
+</p>
+
+<p align="center">
+  <img src="assets/screenshot2.png" width="85%" />
+</p>
 
 ---
 
-## 📄 License
-MIT
+## Download
+
+Installers are available for all major platforms.
+
+**Latest release:**  
+https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/latest
+
+| Platform | File |
+|--------|------|
+| macOS (Apple Silicon) | `YT-FORGE-x.x.x-arm64.dmg` |
+| Windows | `YT-FORGE Setup x.x.x-x64.exe` |
+| Windows ARM | `YT-FORGE Setup x.x.x-arm64.exe` |
+| Linux | `YT-FORGE-x.x.x-x64.AppImage` |
+| Linux ARM | `YT-FORGE-x.x.x-arm64.AppImage` |
+
+---
+
+## Security Notice
+
+Because this is an independent open-source application without enterprise code-signing certificates, your operating system may show a warning on first launch.
+
+**Windows:**  
+`More Info` → `Run Anyway`
+
+**macOS:**  
+`System Settings → Privacy & Security → Open Anyway`
+
+This approval is required **only once**.
+
+---
+
+## Legal
+
+YT-FORGE is a graphical interface for the open-source **yt-dlp** project.
+
+This application does not modify or circumvent the original software.
+
+Please download only content that you have permission to access or distribute.
+
+---
+
+<div align="center">
+Built with Electron, React, and Vite.
+</div>
