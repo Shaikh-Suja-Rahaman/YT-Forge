@@ -104,7 +104,7 @@ function updateYtDlp() {
   ytDlpPhase = "checking";
   console.log("Checking for yt-dlp updates...");
   safeSend("ytdlp-update-status", { status: "checking" });
-  const proc = spawn(ytDlpBinaryPath, ["-U"], { env: getYtDlpEnv() });
+  const proc = spawn(ytDlpBinaryPath, ["-U"], { env: getYtDlpEnv(), windowsHide: true });
   let stdoutAll = "";
   let stderrAll = "";
   let downloadingSignalled = false;
@@ -159,12 +159,14 @@ function createWindow() {
     width: 800,
     height: 700,
     resizable: true,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
+  mainWindow.setMenu(null);
   if (!app.isPackaged) {
     mainWindow.loadURL("http://localhost:5173");
   } else {
@@ -316,7 +318,7 @@ async function runYtDlpJson(url, extraArgs = []) {
       "--dump-json",
       ...BASE_ARGS,
       ...extraArgs
-    ], { env: getYtDlpEnv() });
+    ], { env: getYtDlpEnv(), windowsHide: true });
     currentInfoFetchProcess = proc;
     let out = "";
     let err = "";
@@ -521,7 +523,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           }
         }
         if (process.platform === "win32") {
-          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"]);
+          spawn("taskkill", ["/pid", String(ytDlpProcess.pid), "/f", "/t"], { windowsHide: true });
         } else {
           try {
             process.kill(-ytDlpProcess.pid, "SIGTERM");
@@ -620,7 +622,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       args.push("--merge-output-format", "mp4");
     }
     console.log("Starting yt-dlp with command:", ytDlpBinaryPath, args.join(" "));
-    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
+    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true, windowsHide: true });
     safeSend("download-progress", { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: "starting" });
     let lastPercent = -1;
     let stdoutBuf = "";

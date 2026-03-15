@@ -215,12 +215,15 @@ function createWindow() {
     width: 800,
     height: 700,
     resizable: true,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  mainWindow.setMenu(null);
 
   if (!app.isPackaged) {
     mainWindow.loadURL('http://localhost:5173');
