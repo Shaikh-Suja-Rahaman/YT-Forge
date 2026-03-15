@@ -126,6 +126,11 @@ const DetailsView = () => {
     window.electronAPI.onDownloadProgress(listener);
   }, []);
 
+  // Clear downloaded state if the user changes the format or quality
+  useEffect(() => {
+    setDownloadedFilePath(null);
+  }, [selectedQuality, selectedType]);
+
   const handleDownload = async () => {
     setIsDownloading(true);
     setProgress(0);

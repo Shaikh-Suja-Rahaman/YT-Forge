@@ -9,103 +9,129 @@ import LoadingComponent from './LoadingComponent';
 import { AlertCircle, ArrowLeft, Download, CheckCircle2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// ─── App-level update banner (for the app itself via electron-updater) ────────
-const AppUpdateBanner = () => {
+// ─── App-level update Modal (for the app itself via electron-updater) ────────
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { Progress } from "@/components/ui/progress";
+
+const AppUpdateModal = () => {
   const [updateState, setUpdateState] = useState(null);
   const [version, setVersion] = useState('');
   const [percent, setPercent] = useState(0);
-  const [dismissed, setDismissed] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     window.electronAPI.onAppUpdateStatus((data) => {
       if (data.status === 'available') {
         setUpdateState('available');
         setVersion(data.version);
-        setDismissed(false);
+        setOpen(true);
       } else if (data.status === 'downloading') {
         setUpdateState('downloading');
         setPercent(data.percent || 0);
-        setDismissed(false);
+        // keep open while downloading to show progress
+        setOpen(true);
       } else if (data.status === 'downloaded') {
         setUpdateState('downloaded');
-        setDismissed(false);
+        setOpen(true);
       } else if (data.status === 'error' || data.status === 'up-to-date') {
-        setUpdateState(null);
+        // If they checked for updates manually and it failed/is up to date, we don't handle it here right now,
+        // but it hides the modal if it's open.
+        if (updateState === 'downloading') setOpen(false);
       }
     });
-  }, []);
 
-  if (!updateState || dismissed) return null;
+    // // DEV MOCK - uncomment to test UI purely in renderer
+    // setUpdateState('available'); // 'available', 'downloading', 'downloaded'
+    // setVersion('1.0.1');
+    // setPercent(45);
+    // setOpen(true);
+
+  }, [updateState]);
+
+  if (!updateState) return null;
+
+  const handleDownload = () => {
+    window.electronAPI.downloadAppUpdate();
+  };
+
+  const handleRestart = () => {
+    window.electronAPI.installAppUpdate();
+  };
+
+  // Prevent closing when downloading
+  const handleOpenChange = (isOpen) => {
+    if (updateState === 'downloading') return;
+    setOpen(isOpen);
+  };
 
   return (
-    <div className="rounded-lg border border-border/50 bg-card/95 backdrop-blur-md shadow-sm px-4 py-2.5 mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          {updateState === 'available' && (
-            <>
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/10 shrink-0">
-                <Download className="h-3 w-3 text-blue-400" />
-              </div>
-              <span className="text-xs font-medium text-foreground truncate">
-                Update v{version} available
-              </span>
-            </>
-          )}
-          {updateState === 'downloading' && (
-            <>
-              <RefreshCw className="h-3.5 w-3.5 text-blue-400 animate-spin shrink-0" />
-              <span className="text-xs font-medium text-muted-foreground">
-                Downloading update… {percent}%
-              </span>
-            </>
-          )}
-          {updateState === 'downloaded' && (
-            <>
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500/10 shrink-0">
-                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-              </div>
-              <span className="text-xs font-medium text-foreground">
-                Update ready — restart to apply
-              </span>
-            </>
-          )}
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      <AlertDialogContent className="sm:max-w-sm bg-background border-border/40 shadow-xl p-0 overflow-hidden outline-none rounded-xl">
+        <div className="px-6 pt-6 pb-5">
+          <AlertDialogHeader className="space-y-3">
+            <div className="text-left space-y-2">
+              <AlertDialogTitle className="text-lg font-medium text-foreground tracking-tight flex items-baseline gap-2">
+                {updateState === 'available' && "Update Available"}
+                {updateState === 'downloading' && "Downloading Update"}
+                {updateState === 'downloaded' && "Update Ready"}
+
+                {updateState === 'available' && (
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-sm">
+                    {version}
+                  </span>
+                )}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                {updateState === 'available' && "A new version of YT-FORGE is available. Download now to get the latest improvements."}
+                {updateState === 'downloading' && (
+                  <span className="flex flex-col gap-3 mt-4">
+                    <span className="flex justify-between items-center text-xs font-medium text-foreground">
+                      <span>Downloading</span>
+                      <span>{percent}%</span>
+                    </span>
+                    <Progress value={percent} className="h-1.5 w-full bg-secondary" />
+                  </span>
+                )}
+                {updateState === 'downloaded' && "The update is ready. Restart YT-FORGE to apply the changes."}
+              </AlertDialogDescription>
+            </div>
+          </AlertDialogHeader>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {updateState === 'available' && (
-            <button
-              onClick={() => window.electronAPI.downloadAppUpdate()}
-              className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 px-2.5 py-1 rounded-md hover:bg-blue-500/10 transition-colors cursor-pointer"
-            >
-              Download
-            </button>
-          )}
-          {updateState === 'downloaded' && (
-            <button
-              onClick={() => window.electronAPI.installAppUpdate()}
-              className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2.5 py-1 rounded-md hover:bg-emerald-500/10 transition-colors cursor-pointer"
-            >
-              Restart Now
-            </button>
-          )}
-          {updateState !== 'downloading' && (
-            <button
-              onClick={() => setDismissed(true)}
-              className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      </div>
-      {updateState === 'downloading' && (
-        <div className="mt-2 h-1 rounded-full bg-secondary overflow-hidden">
-          <div
-            className="h-full bg-blue-500 rounded-full transition-all duration-300"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      )}
-    </div>
+
+        {updateState !== 'downloading' && (
+          <div className="px-6 py-4 bg-muted/30 border-t border-border/30 flex justify-end gap-2">
+            <AlertDialogCancel asChild>
+              <Button variant="ghost" className="h-8 px-3 text-xs text-muted-foreground hover:text-foreground">
+                Skip
+              </Button>
+            </AlertDialogCancel>
+
+            {updateState === 'available' ? (
+              <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDownload(); }} asChild>
+                <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
+                  Download
+                </Button>
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction onClick={handleRestart} asChild>
+                <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
+                  Restart
+                </Button>
+              </AlertDialogAction>
+            )}
+          </div>
+        )}
+      </AlertDialogContent>
+    </AlertDialog>
   );
 };
 
@@ -159,7 +185,7 @@ const AppContent = () => {
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      <AppUpdateBanner />
+      <AppUpdateModal />
       <Header />
       <Card className="flex-1 overflow-hidden border-border/50">
         <CardContent className="flex flex-col h-full p-5">
