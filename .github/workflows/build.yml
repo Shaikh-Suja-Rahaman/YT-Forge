@@ -60,4 +60,4 @@ jobs:
       - name: Build & Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: ${{ matrix.script }}
+        run: ${{ matrix.script }} -- -p always
