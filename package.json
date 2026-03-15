@@ -18,7 +18,16 @@
     "dist:linux:arm": "npm run build && electron-builder --linux --arm64",
     "publish": "npm run build && electron-builder --publish always"
   },
-  "keywords": [],
+  "keywords": [
+    "youtube-downloader",
+    "yt-dlp",
+    "yt-dlp-gui",
+    "yt-dlp-wrapper",
+    "video-downloader",
+    "electron-app",
+    "react",
+    "shadcn"
+  ],
   "author": {
     "name": "Suja",
     "email": "sujarahaman.dms.727@gmail.com"

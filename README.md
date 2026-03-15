@@ -17,8 +17,7 @@
 
 ## Overview
 
-**YT-FORGE** is a lightweight desktop application built on top of the powerful  
-[`yt-dlp`](https://github.com/yt-dlp/yt-dlp) engine.
+**YT-FORGE** is a fast, lightweight desktop **YouTube video downloader** and **yt-dlp GUI wrapper** built on top of the powerful [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) engine.
 
 It focuses on three things:
 
