@@ -148,7 +148,7 @@ function updateYtDlp() {
   // Phase 1: tell the UI we are checking
   safeSend('ytdlp-update-status', { status: 'checking' });
 
-  const proc = spawn(ytDlpBinaryPath, ['-U'], { env: getYtDlpEnv() });
+  const proc = spawn(ytDlpBinaryPath, ['-U'], { env: getYtDlpEnv(), windowsHide: true });
   let stdoutAll = '';
   let stderrAll = '';
   let downloadingSignalled = false;
@@ -409,7 +409,7 @@ async function runYtDlpJson(url, extraArgs = []) {
       '--dump-json',
       ...BASE_ARGS,
       ...extraArgs,
-    ], { env: getYtDlpEnv() });
+    ], { env: getYtDlpEnv(), windowsHide: true });
     currentInfoFetchProcess = proc;
     let out = '';
     let err = '';
@@ -648,7 +648,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
           try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
         }
         if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t']);
+          spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t'], { windowsHide: true });
         } else {
           // Kill the entire process group
           try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
@@ -756,7 +756,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
 
     // Spawn in its own process group (detached) so SIGSTOP/SIGCONT
     // can freeze/resume the entire group via negative PID
-    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true });
+    ytDlpProcess = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), detached: true, windowsHide: true });
 
     // Send an initial "started" event so the UI shows activity immediately
     safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'starting' });
