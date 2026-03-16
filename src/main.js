@@ -11,11 +11,17 @@ const fixAsar = (p) => p.replace('app.asar', 'app.asar.unpacked');
 const ffmpegPath = fixAsar(require('ffmpeg-static'));
 const ffprobePath = fixAsar(require('ffprobe-static').path);
 
-// Build env with ffmpeg+ffprobe directories on PATH so yt-dlp can find both
+// Build env with ffmpeg+ffprobe directories on PATH so yt-dlp can find both.
+// Inject ELECTRON_RUN_AS_NODE=1 so if yt-dlp spawns us as a Node JS runtime,
+// Electron acts as a headless Node terminal instead of opening a second GUI window.
 function getYtDlpEnv() {
   const dirs = new Set([path.dirname(ffmpegPath), path.dirname(ffprobePath)]);
   const extraPath = [...dirs].join(path.delimiter);
-  return { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}` };
+  return { 
+    ...process.env, 
+    PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}`,
+    ELECTRON_RUN_AS_NODE: '1'
+  };
 }
 
 const _Store = require("electron-store");
@@ -28,7 +34,8 @@ const BASE_ARGS = [
   '--retries', '10',
   '--retry-sleep', '3',
   '--fragment-retries', '10',
-  '--js-runtimes', 'default,node,bun',  // enable Node/Bun as JS runtimes alongside deno
+  // Explicitly command yt-dlp to use our bundled Electron executable as the Node.js runtime to solve YouTube's bot-challenges (HTTP Error 429).
+  '--js-runtimes', `node:${process.execPath}`,  
 ];
 
 const store = new Store();

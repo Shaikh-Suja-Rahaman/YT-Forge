@@ -65,10 +65,10 @@ https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/latest
 
 | OS | Hardware / Architecture | Direct Download (v1.0.1) |
 |--------|---------------------|--------------------------|
-| **macOS** | Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1-arm64.dmg) |
-| **Windows** | Intel / AMD & Snapdragon (ARM) | [Download .exe](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-Setup-1.0.1.exe) |
-| **Linux** | Intel / AMD (Standard PCs) | [Download .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1.AppImage) |
-| **Linux** | ARM Devices (Raspberry Pi, etc.)| [Download ARM .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1-arm64.AppImage) |
+| **macOS** | Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.2/YT-FORGE-1.0.2-arm64.dmg) |
+| **Windows** | Intel / AMD & Snapdragon (ARM) | [Download .exe](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.2/YT-FORGE-Setup-1.0.2.exe) |
+| **Linux** | Intel / AMD (Standard PCs) | [Download .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.2/YT-FORGE-1.0.2.AppImage) |
+| **Linux** | ARM Devices (Raspberry Pi, etc.)| [Download ARM .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.2/YT-FORGE-1.0.2-arm64.AppImage) |
 
 ---
 
