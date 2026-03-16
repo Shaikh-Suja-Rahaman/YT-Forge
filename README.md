@@ -63,13 +63,12 @@ Installers are available for all major platforms.
 **Latest release:**  
 https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/latest
 
-| Platform | File |
-|--------|------|
-| macOS (Apple Silicon) | `YT-FORGE-x.x.x-arm64.dmg` |
-| Windows | `YT-FORGE Setup x.x.x-x64.exe` |
-| Windows ARM | `YT-FORGE Setup x.x.x-arm64.exe` |
-| Linux | `YT-FORGE-x.x.x-x64.AppImage` |
-| Linux ARM | `YT-FORGE-x.x.x-arm64.AppImage` |
+| OS | Hardware / Architecture | Direct Download (v1.0.1) |
+|--------|---------------------|--------------------------|
+| **macOS** | Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1-arm64.dmg) |
+| **Windows** | Intel / AMD & Snapdragon (ARM) | [Download .exe](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-Setup-1.0.1.exe) |
+| **Linux** | Intel / AMD (Standard PCs) | [Download .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1.AppImage) |
+| **Linux** | ARM Devices (Raspberry Pi, etc.)| [Download ARM .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.1/YT-FORGE-1.0.1-arm64.AppImage) |
 
 ---
 
