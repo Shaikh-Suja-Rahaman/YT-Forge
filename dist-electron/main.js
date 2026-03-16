@@ -11,7 +11,11 @@ const ffprobePath = fixAsar(require("ffprobe-static").path);
 function getYtDlpEnv() {
   const dirs = /* @__PURE__ */ new Set([path.dirname(ffmpegPath), path.dirname(ffprobePath)]);
   const extraPath = [...dirs].join(path.delimiter);
-  return { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ""}` };
+  return {
+    ...process.env,
+    PATH: `${extraPath}${path.delimiter}${process.env.PATH || ""}`,
+    ELECTRON_RUN_AS_NODE: "1"
+  };
 }
 const _Store = require("electron-store");
 const Store = _Store.default || _Store;
@@ -24,9 +28,9 @@ const BASE_ARGS = [
   "3",
   "--fragment-retries",
   "10",
+  // Explicitly command yt-dlp to use our bundled Electron executable as the Node.js runtime to solve YouTube's bot-challenges (HTTP Error 429).
   "--js-runtimes",
-  "default,node,bun"
-  // enable Node/Bun as JS runtimes alongside deno
+  `node:${process.execPath}`
 ];
 const store = new Store();
 let mainWindow;
