@@ -263,7 +263,7 @@ function startNetworkMonitoring() {
 // App auto-update via electron-updater (GitHub Releases)
 // ---------------------------------------------------------------------------
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false; // We handle this explicitly via our UI button
 
 function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
@@ -291,11 +291,32 @@ ipcMain.on('download-app-update', () => {
   autoUpdater.downloadUpdate();
 });
 ipcMain.on('install-app-update', () => {
-  autoUpdater.quitAndInstall();
+  console.log('Restarting app to install update...');
+  // Force a restart and install
+  autoUpdater.quitAndInstall(false, true);
+  // Fail-safe: if the above doesn't kill the process immediately, force quit
+  setTimeout(() => app.quit(), 1000);
 });
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 app.whenReady().then(() => {
+  // macOS Diagnostic: Check if we are running in the read-only "App Translocation" sandbox (Downloads folder trap)
+  if (process.platform === 'darwin' && app.isPackaged) {
+    const appPath = app.getAppPath();
+    if (appPath.includes('/AppTranslocation/')) {
+      console.warn('CRITICAL: App is running from a translocated path (Read-Only). Auto-updates will fail.');
+      setTimeout(() => {
+        dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          title: 'Update Compatibility Issue',
+          message: 'YT-FORGE is currently running from a read-only location (likely your Downloads folder).',
+          detail: 'To receive automatic updates, please move YT-FORGE to your Applications folder and restart it.',
+          buttons: ['Got it']
+        });
+      }, 5000);
+    }
+  }
+
   createWindow();
   startNetworkMonitoring();
   setupAutoUpdater();
