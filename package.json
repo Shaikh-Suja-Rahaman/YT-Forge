@@ -1,6 +1,6 @@
 {
   "name": "yt-forge",
-  "productName": "YT-FORGE",
+  "productName": "YT-Forge",
   "version": "1.0.3",
   "description": "A desktop YouTube video downloader powered by yt-dlp",
   "main": "dist-electron/main.js",
