@@ -32,7 +32,10 @@ const HistoryView = () => {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between pb-4 mb-1">
-        <h2 className="text-lg font-semibold tracking-tight">Downloads</h2>
+        <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+          Downloads
+          <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground bg-secondary/50 px-1.5 py-[1px] rounded">v1.0.5</span>
+        </h2>
         <div className="flex items-center gap-2">
           {(appUpdateState === 'available' || appUpdateState === 'downloaded') && (
             <Button 
