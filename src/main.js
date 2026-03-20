@@ -263,7 +263,7 @@ function startNetworkMonitoring() {
 // App auto-update via electron-updater (GitHub Releases)
 // ---------------------------------------------------------------------------
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false; // We handle this explicitly via our UI button
+autoUpdater.autoInstallOnAppQuit = true; // Install gracefully on quit if the user closes it manually
 
 function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => {
@@ -293,9 +293,10 @@ ipcMain.on('download-app-update', () => {
 ipcMain.on('install-app-update', () => {
   console.log('Restarting app to install update...');
   // Force a restart and install
+  // We use isSilent=false and isForceRunAfter=true so the native macOS/Windows updater
+  // can successfully quit and restart the app. We remove any forced app.quit() calls
+  // as they intercept and break the update process (especially on macOS).
   autoUpdater.quitAndInstall(false, true);
-  // Fail-safe: if the above doesn't kill the process immediately, force quit
-  setTimeout(() => app.quit(), 1000);
 });
 ipcMain.handle('get-app-version', () => app.getVersion());
 

@@ -192,7 +192,7 @@ function startNetworkMonitoring() {
   }, 3e3);
 }
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false;
 function setupAutoUpdater() {
   autoUpdater.on("update-available", (info) => {
     safeSend("app-update-status", { status: "available", version: info.version });
@@ -218,10 +218,27 @@ ipcMain.on("download-app-update", () => {
   autoUpdater.downloadUpdate();
 });
 ipcMain.on("install-app-update", () => {
-  autoUpdater.quitAndInstall();
+  console.log("Restarting app to install update...");
+  autoUpdater.quitAndInstall(false, true);
+  setTimeout(() => app.quit(), 1e3);
 });
 ipcMain.handle("get-app-version", () => app.getVersion());
 app.whenReady().then(() => {
+  if (process.platform === "darwin" && app.isPackaged) {
+    const appPath = app.getAppPath();
+    if (appPath.includes("/AppTranslocation/")) {
+      console.warn("CRITICAL: App is running from a translocated path (Read-Only). Auto-updates will fail.");
+      setTimeout(() => {
+        dialog.showMessageBox(mainWindow, {
+          type: "warning",
+          title: "Update Compatibility Issue",
+          message: "YT-FORGE is currently running from a read-only location (likely your Downloads folder).",
+          detail: "To receive automatic updates, please move YT-FORGE to your Applications folder and restart it.",
+          buttons: ["Got it"]
+        });
+      }, 5e3);
+    }
+  }
   createWindow();
   startNetworkMonitoring();
   setupAutoUpdater();
