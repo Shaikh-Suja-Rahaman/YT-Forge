@@ -1,26 +1,26 @@
 name: Build and Release YT-FORGE
 
 on:
-  workflow_dispatch: # Allows you to manually trigger the build from GitHub UI
+  workflow_dispatch:
+
+# 1. ADD THIS PERMISSIONS BLOCK
+permissions:
+  contents: write
 
 jobs:
   release:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
-      matrix:
+      matrix: # ... (KEEP YOUR MATRIX EXACTLY AS IT WAS) ...
         include:
-          # Apple Silicon Mac (arm64)
           - os: macos-latest
             script: npm run dist:mac:arm
-          # Windows (Builds both x64 and arm64 automatically)
           - os: windows-latest
             script: npm run dist:win
-          # Linux PC (x64)
           - os: ubuntu-latest
             script: npm run dist:linux
-          # Linux ARM (Raspberry Pi, ARM Servers)
           - os: ubuntu-24.04-arm
             script: npm run dist:linux:arm
 
@@ -32,6 +32,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # ... (KEEP ALL YOUR YT-DLP AND NPM CI INSTALL STEPS EXACTLY AS THEY WERE) ...
 
       - name: Download yt-dlp (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -59,5 +61,6 @@ jobs:
 
       - name: Build & Publish to GitHub Releases
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          # 2. CHANGE TO secrets.GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ${{ matrix.script }} -- -p always
