@@ -192,7 +192,7 @@ function startNetworkMonitoring() {
   }, 3e3);
 }
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false;
+autoUpdater.autoInstallOnAppQuit = true;
 function setupAutoUpdater() {
   autoUpdater.on("update-available", (info) => {
     safeSend("app-update-status", { status: "available", version: info.version });
@@ -220,7 +220,6 @@ ipcMain.on("download-app-update", () => {
 ipcMain.on("install-app-update", () => {
   console.log("Restarting app to install update...");
   autoUpdater.quitAndInstall(false, true);
-  setTimeout(() => app.quit(), 1e3);
 });
 ipcMain.handle("get-app-version", () => app.getVersion());
 app.whenReady().then(() => {

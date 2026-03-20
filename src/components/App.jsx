@@ -23,39 +23,15 @@ import {
 import { Progress } from "@/components/ui/progress";
 
 const AppUpdateModal = () => {
-  const [updateState, setUpdateState] = useState(null);
-  const [version, setVersion] = useState('');
-  const [percent, setPercent] = useState(0);
-  const [open, setOpen] = useState(false);
+  const {
+    appUpdateState: updateState,
+    appUpdateVersion: version,
+    appUpdatePercent: percent,
+    showAppUpdateModal: open,
+    setShowAppUpdateModal: setOpen,
+  } = useAppContext();
 
-  useEffect(() => {
-    window.electronAPI.onAppUpdateStatus((data) => {
-      if (data.status === 'available') {
-        setUpdateState('available');
-        setVersion(data.version);
-        setOpen(true);
-      } else if (data.status === 'downloading') {
-        setUpdateState('downloading');
-        setPercent(data.percent || 0);
-        // keep open while downloading to show progress
-        setOpen(true);
-      } else if (data.status === 'downloaded') {
-        setUpdateState('downloaded');
-        setOpen(true);
-      } else if (data.status === 'error' || data.status === 'up-to-date') {
-        // If they checked for updates manually and it failed/is up to date, we don't handle it here right now,
-        // but it hides the modal if it's open.
-        if (updateState === 'downloading') setOpen(false);
-      }
-    });
-
-    // // DEV MOCK - uncomment to test UI purely in renderer
-    // setUpdateState('available'); // 'available', 'downloading', 'downloaded'
-    // setVersion('1.0.1');
-    // setPercent(45);
-    // setOpen(true);
-
-  }, [updateState]);
+  const [dontAskAgain, setDontAskAgain] = useState(false);
 
   if (!updateState) return null;
 
@@ -65,6 +41,13 @@ const AppUpdateModal = () => {
 
   const handleRestart = () => {
     window.electronAPI.installAppUpdate();
+  };
+
+  const handleSkip = () => {
+    if (dontAskAgain) {
+      localStorage.setItem('skipAppUpdateVersion', version);
+    }
+    setOpen(false);
   };
 
   // Prevent closing when downloading
@@ -108,26 +91,42 @@ const AppUpdateModal = () => {
         </div>
 
         {updateState !== 'downloading' && (
-          <div className="px-6 py-4 bg-muted/30 border-t border-border/30 flex justify-end gap-2">
-            <AlertDialogCancel asChild>
-              <Button variant="ghost" className="h-8 px-3 text-xs text-muted-foreground hover:text-foreground">
+          <div className="px-6 py-4 bg-muted/30 border-t border-border/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-2">
+            {updateState === 'available' ? (
+              <label className="flex items-center gap-2 cursor-pointer outline-none group">
+                <input 
+                  type="checkbox" 
+                  checked={dontAskAgain} 
+                  onChange={(e) => setDontAskAgain(e.target.checked)}
+                  className="rounded border-border bg-muted/50 text-foreground cursor-pointer focus:ring-1 focus:ring-primary/30 h-3.5 w-3.5 accent-foreground"
+                />
+                <span className="text-[11.5px] text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                  Don't prompt for this version
+                </span>
+              </label>
+            ) : (
+              <div /> // Spacer for flex-between
+            )}
+            
+            <div className={`flex justify-end gap-2 ${updateState !== 'available' ? 'w-full' : 'w-full sm:w-auto'}`}>
+              <Button variant="ghost" onClick={handleSkip} className="h-8 px-3 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground hover:text-foreground">
                 Skip
               </Button>
-            </AlertDialogCancel>
 
-            {updateState === 'available' ? (
-              <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDownload(); }} asChild>
-                <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
-                  Download
-                </Button>
-              </AlertDialogAction>
-            ) : (
-              <AlertDialogAction onClick={handleRestart} asChild>
-                <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
-                  Restart
-                </Button>
-              </AlertDialogAction>
-            )}
+              {updateState === 'available' ? (
+                <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDownload(); }} asChild>
+                  <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
+                    Download
+                  </Button>
+                </AlertDialogAction>
+              ) : (
+                <AlertDialogAction onClick={handleRestart} asChild>
+                  <Button className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors">
+                    Restart
+                  </Button>
+                </AlertDialogAction>
+              )}
+            </div>
           </div>
         )}
       </AlertDialogContent>

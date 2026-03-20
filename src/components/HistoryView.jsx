@@ -13,10 +13,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Trash2, FolderOpen, X } from 'lucide-react';
+import { Trash2, FolderOpen, X, Download } from 'lucide-react';
 
 const HistoryView = () => {
-  const { history, setHistory } = useAppContext();
+  const { history, setHistory, appUpdateState, setShowAppUpdateModal } = useAppContext();
 
   const handleClearHistory = async () => {
     await window.electronAPI.clearHistory();
@@ -33,30 +33,44 @@ const HistoryView = () => {
       {/* Header */}
       <div className="flex items-center justify-between pb-4 mb-1">
         <h2 className="text-lg font-semibold tracking-tight">Downloads</h2>
-        {history.length > 0 && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-white gap-1.5 h-7 text-xs">
-                <Trash2 className="h-3 w-3" />
-                Clear
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Clear download history?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently remove all download history entries. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-white hover:bg-destructive/80">
-                  Clear History
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+        <div className="flex items-center gap-2">
+          {(appUpdateState === 'available' || appUpdateState === 'downloaded') && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setShowAppUpdateModal(true)}
+              className="h-7 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground gap-1.5 transition-colors bg-primary/10"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Update {appUpdateState === 'available' ? 'Available' : 'Ready'}
+            </Button>
+          )}
+
+          {history.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-white gap-1.5 h-7 text-xs">
+                  <Trash2 className="h-3 w-3" />
+                  Clear
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear download history?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove all download history entries. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-white hover:bg-destructive/80">
+                    Clear History
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {/* History List */}

@@ -22,6 +22,12 @@ export const AppProvider = ({ children }) => {
   // True when user clicked "Get Video" while yt-dlp was still running
   const [pendingFetch, setPendingFetch] = useState(false);
 
+  // App auto-updater state
+  const [appUpdateState, setAppUpdateState] = useState(null);
+  const [appUpdateVersion, setAppUpdateVersion] = useState('');
+  const [appUpdatePercent, setAppUpdatePercent] = useState(0);
+  const [showAppUpdateModal, setShowAppUpdateModal] = useState(false);
+
   const fetchIdRef = useRef(0);
   const urlRef = useRef(url);
   urlRef.current = url;
@@ -37,6 +43,38 @@ export const AppProvider = ({ children }) => {
   // Fetch history on mount
   useEffect(() => {
     window.electronAPI.getHistory().then(setHistory);
+  }, []);
+
+  // App auto-updater listener
+  useEffect(() => {
+    window.electronAPI.onAppUpdateStatus((data) => {
+      if (data.status === 'available') {
+        setAppUpdateState('available');
+        setAppUpdateVersion(data.version);
+        const skipped = localStorage.getItem('skipAppUpdateVersion');
+        if (skipped !== data.version) {
+          setShowAppUpdateModal(true);
+        }
+      } else if (data.status === 'downloading') {
+        setAppUpdateState('downloading');
+        setAppUpdatePercent(data.percent || 0);
+        setShowAppUpdateModal(true);
+      } else if (data.status === 'downloaded') {
+        setAppUpdateState('downloaded');
+        setShowAppUpdateModal(true);
+      } else if (data.status === 'error' || data.status === 'up-to-date') {
+        setAppUpdateState(data.status);
+        setShowAppUpdateModal(false);
+      }
+    });
+
+    // // DEV MOCK - uncomment to test UI purely in renderer
+    // setAppUpdateState('available'); // 'available', 'downloading', 'downloaded'
+    // setAppUpdateVersion('1.0.1');
+    // setAppUpdatePercent(45);
+    // const skipped = localStorage.getItem('skipAppUpdateVersion');
+    // if (skipped !== '1.0.1') setShowAppUpdateModal(true);
+
   }, []);
 
   // The actual fetch logic — uses urlRef so it's always fresh
@@ -133,6 +171,11 @@ export const AppProvider = ({ children }) => {
     ytDlpStatus,
     pendingFetch,
     isYtDlpBusy,
+    appUpdateState,
+    appUpdateVersion,
+    appUpdatePercent,
+    showAppUpdateModal,
+    setShowAppUpdateModal,
     setUrl,
     setVideoDetails,
     setHistory,
