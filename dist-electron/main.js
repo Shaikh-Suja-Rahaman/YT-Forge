@@ -1,6 +1,5 @@
 "use strict";
 const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
-const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -191,61 +190,12 @@ function startNetworkMonitoring() {
     }
   }, 3e3);
 }
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
-function setupAutoUpdater() {
-  autoUpdater.on("update-available", (info) => {
-    safeSend("app-update-status", { status: "available", version: info.version });
-  });
-  autoUpdater.on("update-not-available", () => {
-    safeSend("app-update-status", { status: "up-to-date" });
-  });
-  autoUpdater.on("download-progress", (progress) => {
-    safeSend("app-update-status", { status: "downloading", percent: Math.round(progress.percent) });
-  });
-  autoUpdater.on("update-downloaded", () => {
-    safeSend("app-update-status", { status: "downloaded" });
-  });
-  autoUpdater.on("error", (err) => {
-    console.log("Auto-updater error (non-critical):", err.message);
-    safeSend("app-update-status", { status: "error", message: err.message });
-  });
-}
-ipcMain.handle("check-for-app-update", () => {
-  autoUpdater.checkForUpdates();
-});
-ipcMain.on("download-app-update", () => {
-  autoUpdater.downloadUpdate();
-});
-ipcMain.on("install-app-update", () => {
-  console.log("Restarting app to install update...");
-  autoUpdater.quitAndInstall(false, true);
-});
 ipcMain.handle("get-app-version", () => app.getVersion());
 app.whenReady().then(() => {
-  if (process.platform === "darwin" && app.isPackaged) {
-    const appPath = app.getAppPath();
-    if (appPath.includes("/AppTranslocation/")) {
-      console.warn("CRITICAL: App is running from a translocated path (Read-Only). Auto-updates will fail.");
-      setTimeout(() => {
-        dialog.showMessageBox(mainWindow, {
-          type: "warning",
-          title: "Update Compatibility Issue",
-          message: "YT-FORGE is currently running from a read-only location (likely your Downloads folder).",
-          detail: "To receive automatic updates, please move YT-FORGE to your Applications folder and restart it.",
-          buttons: ["Got it"]
-        });
-      }, 5e3);
-    }
-  }
   createWindow();
   startNetworkMonitoring();
-  setupAutoUpdater();
   mainWindow.webContents.once("did-finish-load", () => {
     updateYtDlp();
-    if (app.isPackaged) {
-      setTimeout(() => autoUpdater.checkForUpdates(), 5e3);
-    }
   });
 });
 app.on("window-all-closed", () => {

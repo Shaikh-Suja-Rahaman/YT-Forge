@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
-const { autoUpdater } = require('electron-updater');
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -259,75 +258,16 @@ function startNetworkMonitoring() {
   }, 3000);
 }
 
-// ---------------------------------------------------------------------------
-// App auto-update via electron-updater (GitHub Releases)
-// ---------------------------------------------------------------------------
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true; // Install gracefully on quit if the user closes it manually
 
-function setupAutoUpdater() {
-  autoUpdater.on('update-available', (info) => {
-    safeSend('app-update-status', { status: 'available', version: info.version });
-  });
-  autoUpdater.on('update-not-available', () => {
-    safeSend('app-update-status', { status: 'up-to-date' });
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    safeSend('app-update-status', { status: 'downloading', percent: Math.round(progress.percent) });
-  });
-  autoUpdater.on('update-downloaded', () => {
-    safeSend('app-update-status', { status: 'downloaded' });
-  });
-  autoUpdater.on('error', (err) => {
-    console.log('Auto-updater error (non-critical):', err.message);
-    safeSend('app-update-status', { status: 'error', message: err.message });
-  });
-}
-
-ipcMain.handle('check-for-app-update', () => {
-  autoUpdater.checkForUpdates();
-});
-ipcMain.on('download-app-update', () => {
-  autoUpdater.downloadUpdate();
-});
-ipcMain.on('install-app-update', () => {
-  console.log('Restarting app to install update...');
-  // Force a restart and install
-  // We use isSilent=false and isForceRunAfter=true so the native macOS/Windows updater
-  // can successfully quit and restart the app. We remove any forced app.quit() calls
-  // as they intercept and break the update process (especially on macOS).
-  autoUpdater.quitAndInstall(false, true);
-});
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 app.whenReady().then(() => {
-  // macOS Diagnostic: Check if we are running in the read-only "App Translocation" sandbox (Downloads folder trap)
-  if (process.platform === 'darwin' && app.isPackaged) {
-    const appPath = app.getAppPath();
-    if (appPath.includes('/AppTranslocation/')) {
-      console.warn('CRITICAL: App is running from a translocated path (Read-Only). Auto-updates will fail.');
-      setTimeout(() => {
-        dialog.showMessageBox(mainWindow, {
-          type: 'warning',
-          title: 'Update Compatibility Issue',
-          message: 'YT-FORGE is currently running from a read-only location (likely your Downloads folder).',
-          detail: 'To receive automatic updates, please move YT-FORGE to your Applications folder and restart it.',
-          buttons: ['Got it']
-        });
-      }, 5000);
-    }
-  }
-
   createWindow();
   startNetworkMonitoring();
-  setupAutoUpdater();
   // Start yt-dlp update check AFTER the renderer finishes loading so the
   // 'checking' IPC event is never sent before the listener is registered.
   mainWindow.webContents.once('did-finish-load', () => {
     updateYtDlp();
-    if (app.isPackaged) {
-      setTimeout(() => autoUpdater.checkForUpdates(), 5000);
-    }
   });
 });
 app.on("window-all-closed", () => {

@@ -23,12 +23,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   getYtDlpStatus: () => ipcRenderer.invoke("get-ytdlp-status"),
   // App auto-update APIs
-  checkForAppUpdate: () => ipcRenderer.invoke("check-for-app-update"),
-  downloadAppUpdate: () => ipcRenderer.send("download-app-update"),
-  installAppUpdate: () => ipcRenderer.send("install-app-update"),
-  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
-  onAppUpdateStatus: (callback) => {
-    ipcRenderer.removeAllListeners("app-update-status");
-    ipcRenderer.on("app-update-status", (_event, value) => callback(value));
-  }
+  getAppVersion: () => ipcRenderer.invoke("get-app-version")
 });

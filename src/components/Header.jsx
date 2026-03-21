@@ -38,7 +38,7 @@ const Header = () => {
           <Button
             variant="ghost"
             size="icon"
-            className="h-10 w-10 shrink-0 text-muted-foreground/40 hover:text-white transition-colors"
+            className="h-10 w-10 shrink-0 text-muted-foreground hover:text-white transition-colors"
             onClick={() => window.electronAPI.openExternalLink('https://github.com/Shaikh-Suja-Rahaman/YT-Forge')}
           >
             <Github className="h-4 w-4" />
