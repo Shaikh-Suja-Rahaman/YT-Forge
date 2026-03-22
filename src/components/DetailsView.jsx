@@ -263,7 +263,7 @@ const DetailsView = () => {
               <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/15">
                 <Info className="h-3 w-3 text-amber-500/70 mt-0.5 shrink-0" />
                 <p className="text-[11px] leading-snug text-amber-500/70">
-                  VP9 may not be supported by some editors <span className="text-amber-500/50">(Premiere Pro, Final Cut)</span> and older players.
+                  VP9 / AV1 may not be supported by some editors <span className="text-amber-500/50">(Premiere Pro, Final Cut)</span> and older players.
                 </p>
               </div>
             )}
@@ -376,8 +376,8 @@ const DetailsView = () => {
               )}
 
               <div className={`rounded-lg border p-3 ${isPaused
-                  ? 'border-amber-500/20 bg-amber-500/5'
-                  : 'border-border/30 bg-secondary/30'
+                ? 'border-amber-500/20 bg-amber-500/5'
+                : 'border-border/30 bg-secondary/30'
                 }`}>
                 <div className="flex justify-between items-center gap-3 mb-2 min-w-0">
                   <span className={`text-xs font-medium whitespace-nowrap ${isPaused ? 'text-amber-400' : 'text-foreground'

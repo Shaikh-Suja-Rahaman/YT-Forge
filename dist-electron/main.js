@@ -346,15 +346,17 @@ ipcMain.handle("get-video-info", async (event, url) => {
       const displayH = rawW > 0 && rawH > 0 ? Math.min(rawW, rawH) : rawH;
       if (!displayH || displayH < 240) return;
       if (!f.vcodec || f.vcodec === "none") return;
-      if (f.vcodec.startsWith("av01")) return;
       const size = f.filesize || f.filesize_approx || 0;
       const fps = f.fps || 30;
       const isAdaptive = f.acodec === "none";
       const isH264 = f.vcodec.startsWith("avc") || f.vcodec === "h264";
+      const isVP9 = f.vcodec.startsWith("vp09") || f.vcodec.startsWith("vp9");
+      const isAV1 = f.vcodec.startsWith("av01");
       const key = `${displayH}_${fps > 30 ? fps : 30}`;
-      const score = (isAdaptive ? 2 : 0) + (isH264 ? 1 : 0);
+      const codecScore = isH264 ? 2 : isVP9 ? 1 : 0;
+      const score = (isAdaptive ? 4 : 0) + codecScore;
       const cur = heightMap[key];
-      const curScore = cur ? (cur.isAdaptive ? 2 : 0) + (cur.isH264 ? 1 : 0) : -1;
+      const curScore = cur ? (cur.isAdaptive ? 4 : 0) + (cur.isH264 ? 2 : cur.isVP9 ? 1 : 0) : -1;
       if (score > curScore || score === curScore && size > ((cur == null ? void 0 : cur.size) || 0)) {
         heightMap[key] = {
           displayHeight: displayH,
@@ -364,14 +366,16 @@ ipcMain.handle("get-video-info", async (event, url) => {
           fps,
           size,
           isAdaptive,
-          isH264
+          isH264,
+          isVP9,
+          isAV1
         };
       }
     });
     const uniqueFormats = Object.values(heightMap).map((f) => ({
       itag: `${f.ytdlpHeight}`,
       // actual yt-dlp height, used in download format arg
-      quality: `${f.displayHeight}p${f.fps > 30 ? f.fps : ""}${f.isH264 ? "" : " (VP9)"}`,
+      quality: `${f.displayHeight}p${f.fps > 30 ? f.fps : ""}${f.isH264 ? "" : f.isVP9 ? " (VP9)" : f.isAV1 ? " (AV1)" : ""}`,
       height: f.displayHeight,
       size: f.size,
       sizeFormatted: f.size > 0 ? formatBytes(f.size) : "N/A",
@@ -569,9 +573,9 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     } else {
       const h = parseInt(quality);
       if (!isNaN(h)) {
-        formatArg = `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[height=${h}][vcodec^=avc]+bestaudio/bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[height=${h}][vcodec!^=av01]+bestaudio/bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[height<=${h}][vcodec^=avc]+bestaudio/bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/best`;
+        formatArg = `bestvideo[height=${h}][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[height=${h}][vcodec^=avc]+bestaudio/bestvideo[height=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[height=${h}][vcodec!^=av01]+bestaudio/bestvideo[height=${h}]+bestaudio[ext=m4a]/bestvideo[height=${h}]+bestaudio/bestvideo[height<=${h}][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[height<=${h}][vcodec^=avc]+bestaudio/bestvideo[height<=${h}][vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[height<=${h}][vcodec!^=av01]+bestaudio/bestvideo[height<=${h}]+bestaudio/best`;
       } else {
-        formatArg = "bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[vcodec!^=av01]+bestaudio/best";
+        formatArg = "bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/bestvideo[vcodec!^=av01]+bestaudio[ext=m4a]/bestvideo[vcodec!^=av01]+bestaudio/bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best";
       }
     }
     console.log("Download request - Selected format:", formatArg, "Quality itag:", quality, "Type:", type);
