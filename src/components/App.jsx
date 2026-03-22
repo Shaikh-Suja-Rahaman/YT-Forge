@@ -17,7 +17,6 @@ const AppContent = () => {
     ytDlpStatus, pendingFetch,
   } = useAppContext();
 
-  console.log("1.0.7 version")
 
   const renderCardContent = () => {
     if (isLoading) {

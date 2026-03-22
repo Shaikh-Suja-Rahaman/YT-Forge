@@ -92,7 +92,7 @@ const DetailsView = () => {
 
     if (convertToH264 && isVP9) {
       if (format.size > 0) {
-        return `~${formatBytes(format.size * 1.4)}`;
+        return `~${formatBytes(format.size * 1.9)}`;
       }
     }
     return format.sizeFormatted;
@@ -178,7 +178,7 @@ const DetailsView = () => {
     // If it's a click event vs our explicit boolean
     const shouldKeep = typeof keepOriginal === 'boolean' ? keepOriginal : false;
     window.electronAPI.cancelDownload({ keepOriginal: shouldKeep });
-    
+
     if (!shouldKeep) {
       setIsDownloading(false);
       setIsPaused(false);
@@ -292,9 +292,9 @@ const DetailsView = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="h-px bg-border/40 w-full" />
-                
+
                 <label className="flex items-start gap-3 cursor-pointer group mt-0.5">
                   <div className={`mt-0.5 flex items-center justify-center w-4 h-4 rounded-[4px] border transition-colors shrink-0 ${convertToH264 ? 'bg-primary border-primary text-primary-foreground' : 'border-border/60 bg-background group-hover:border-primary/50'}`}>
                     {convertToH264 && <Check className="w-3 h-3" strokeWidth={3} />}
@@ -348,8 +348,8 @@ const DetailsView = () => {
                           {downloadStage === 'converting' ? 'Cancel conversion?' : 'Cancel download?'}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          {downloadStage === 'converting' 
-                            ? 'The video has already been downloaded. You can stop the conversion and keep the original file, or delete everything altogether.'
+                          {downloadStage === 'converting'
+                            ? 'The video has already been downloaded. You can stop the conversion and keep the original (VP9 / AV1) file, or delete everything altogether.'
                             : 'The download will be stopped and the partial file will be deleted. This action cannot be undone.'}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -358,14 +358,14 @@ const DetailsView = () => {
                           <>
                             <AlertDialogCancel>Keep converting</AlertDialogCancel>
                             <div className="flex items-center gap-2">
-                              <AlertDialogAction 
-                                variant="outline" 
+                              <AlertDialogAction
+                                variant="outline"
                                 className="bg-transparent border border-border text-foreground hover:bg-secondary"
                                 onClick={() => handleCancelDownload(true)}
                               >
                                 Stop, keep original
                               </AlertDialogAction>
-                              <AlertDialogAction 
+                              <AlertDialogAction
                                 onClick={() => handleCancelDownload(false)}
                                 className="bg-destructive text-white hover:bg-destructive/80"
                               >

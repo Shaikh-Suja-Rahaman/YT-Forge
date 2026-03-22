@@ -40,6 +40,9 @@ Unlike many downloaders, YT-FORGE prioritizes **H.264 video and AAC audio** form
 - **Editor-Friendly Formats**  
   Automatically prefers H.264 + AAC (MP4) over AV1/VP9.
 
+- **Built-in H.264 Conversion**  
+  Easily convert downloaded VP9 or AV1 videos to H.264 directly within the app for maximum compatibility.
+
 - **No Ads. No Tracking.**  
   Fully open-source and transparent.
 
@@ -63,12 +66,12 @@ Installers are available for all major platforms.
 **Latest release:**  
 https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/latest
 
-| OS | Hardware / Architecture | Direct Download (v1.0.1) |
+| OS | Hardware / Architecture | Direct Download (v1.0.8) |
 |--------|---------------------|--------------------------|
-| **macOS** | Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.3/YT-FORGE-1.0.3-arm64.dmg) |
-| **Windows** | Intel / AMD & Snapdragon (ARM) | [Download .exe](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.3/YT-FORGE-Setup-1.0.3.exe) |
-| **Linux** | Intel / AMD (Standard PCs) | [Download .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.3/YT-FORGE-1.0.3.AppImage) |
-| **Linux** | ARM Devices (Raspberry Pi, etc.)| [Download ARM .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.3/YT-FORGE-1.0.3-arm64.AppImage) |
+| **macOS** | Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.8/YT-FORGE-1.0.8-arm64.dmg) |
+| **Windows** | Intel / AMD & Snapdragon (ARM) | [Download .exe](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.8/YT-FORGE-Setup-1.0.8.exe) |
+| **Linux** | Intel / AMD (Standard PCs) | [Download .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.8/YT-FORGE-1.0.8.AppImage) |
+| **Linux** | ARM Devices (Raspberry Pi, etc.)| [Download ARM .AppImage](https://github.com/Shaikh-Suja-Rahaman/YT-Forge/releases/download/v1.0.8/YT-FORGE-1.0.8-arm64.AppImage) |
 
 ---
 
