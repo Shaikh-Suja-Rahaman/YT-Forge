@@ -45,7 +45,7 @@ const Header = () => {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          Support this project
+          Support this project ❤️
         </TooltipContent>
       </Tooltip>
     </header>

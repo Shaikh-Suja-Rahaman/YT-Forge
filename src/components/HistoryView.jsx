@@ -228,7 +228,7 @@ const HistoryView = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-muted-foreground/50 hover:text-yellow-100"
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-white"
                         onClick={() => window.electronAPI.openFileLocation(item.path)}
                       >
                         <FolderOpen className="h-4 w-4" />
@@ -247,7 +247,7 @@ const HistoryView = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive-foreground"
+                            className="h-8 w-8 text-muted-foreground/50 hover:text-white"
                           >
                             <X className="h-4 w-4" />
                           </Button>
