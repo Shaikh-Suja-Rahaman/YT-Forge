@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deleteHistoryItem: (timestamp) => ipcRenderer.invoke("delete-history-item", timestamp),
   openFileLocation: (filePath) => ipcRenderer.invoke("open-file-location", filePath),
   openExternalLink: (url) => ipcRenderer.invoke("open-external-link", url),
-  cancelDownload: () => ipcRenderer.send("cancel-download"),
+  cancelDownload: (options) => ipcRenderer.send("cancel-download", options),
   cancelInfoFetch: () => ipcRenderer.send("cancel-info-fetch"),
   pauseDownload: () => ipcRenderer.send("pause-download"),
   resumeDownload: () => ipcRenderer.send("resume-download"),

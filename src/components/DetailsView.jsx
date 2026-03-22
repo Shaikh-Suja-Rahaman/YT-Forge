@@ -34,6 +34,7 @@ import {
   Pause,
   Play,
   WifiOff,
+  Check,
 } from 'lucide-react';
 
 const formatTime = (totalSeconds) => {
@@ -73,6 +74,9 @@ const DetailsView = () => {
   const [eta, setEta] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
+  // Conversion state
+  const [convertToH264, setConvertToH264] = useState(false);
+
   const isVP9 = useMemo(() => {
     if (selectedType === 'mp3') return false;
     const format = details.formats.find(f => String(f.itag) === selectedQuality);
@@ -84,8 +88,15 @@ const DetailsView = () => {
       return details.audioSizeFormatted || 'N/A';
     }
     const format = details.formats.find(f => String(f.itag) === selectedQuality);
-    return format?.sizeFormatted || "N/A";
-  }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted]);
+    if (!format || !format.sizeFormatted) return "N/A";
+
+    if (convertToH264 && isVP9) {
+      if (format.size > 0) {
+        return `~${formatBytes(format.size * 1.4)}`;
+      }
+    }
+    return format.sizeFormatted;
+  }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted, convertToH264, isVP9]);
 
   const stageLabels = {
     starting: 'Preparing download...',
@@ -93,6 +104,7 @@ const DetailsView = () => {
     audio: 'Downloading audio...',
     merging: 'Merging video & audio...',
     processing: 'Processing audio...',
+    converting: 'Converting to H.264...',
     done: 'Complete!',
   };
 
@@ -147,6 +159,7 @@ const DetailsView = () => {
       quality: selectedQuality,
       qualityLabel,
       type: selectedType,
+      convertToH264: convertToH264 && isVP9,
     };
 
     const result = await window.electronAPI.downloadVideo(options);
@@ -161,12 +174,19 @@ const DetailsView = () => {
     setIsDownloading(false);
   };
 
-  const handleCancelDownload = () => {
-    window.electronAPI.cancelDownload();
-    setIsDownloading(false);
-    setIsPaused(false);
-    setPauseReason(null);
-    setProgress(0);
+  const handleCancelDownload = (keepOriginal = false) => {
+    // If it's a click event vs our explicit boolean
+    const shouldKeep = typeof keepOriginal === 'boolean' ? keepOriginal : false;
+    window.electronAPI.cancelDownload({ keepOriginal: shouldKeep });
+    
+    if (!shouldKeep) {
+      setIsDownloading(false);
+      setIsPaused(false);
+      setPauseReason(null);
+      setProgress(0);
+    } else {
+      setProgressText('Stopping conversion...');
+    }
   };
 
   const handlePauseDownload = () => {
@@ -258,13 +278,33 @@ const DetailsView = () => {
               </Select>
             </div>
 
-            {/* VP9 compatibility note */}
+            {/* VP9 compatibility note & Conversion Toggle */}
             {isVP9 && !isDownloading && (
-              <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/15">
-                <Info className="h-3 w-3 text-amber-500/70 mt-0.5 shrink-0" />
-                <p className="text-[11px] leading-snug text-amber-500/70">
-                  VP9 / AV1 may not be supported by some editors <span className="text-amber-500/50">(Premiere Pro, Final Cut)</span> and older players.
-                </p>
+              <div className="flex flex-col gap-3 p-3 rounded-lg border border-border/40 bg-secondary/20">
+                <div className="flex items-start gap-2.5">
+                  <Info className="h-4 w-4 text-amber-500/70 mt-0.5 shrink-0" />
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-foreground/90 font-medium">
+                      Compatibility Warning
+                    </p>
+                    <p className="text-[11px] leading-snug text-muted-foreground mr-2">
+                      VP9 / AV1 may not be supported by some editors <span className="text-amber-500/50">(Premiere Pro, Final Cut)</span> and older players.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="h-px bg-border/40 w-full" />
+                
+                <label className="flex items-start gap-3 cursor-pointer group mt-0.5">
+                  <div className={`mt-0.5 flex items-center justify-center w-4 h-4 rounded-[4px] border transition-colors shrink-0 ${convertToH264 ? 'bg-primary border-primary text-primary-foreground' : 'border-border/60 bg-background group-hover:border-primary/50'}`}>
+                    {convertToH264 && <Check className="w-3 h-3" strokeWidth={3} />}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-medium leading-none select-none group-hover:text-foreground transition-colors">Convert to H.264 (MP4)</span>
+                    <span className="text-[11px] text-muted-foreground select-none leading-snug">Requires heavy CPU and extra processing time</span>
+                  </div>
+                  <input type="checkbox" className="hidden" checked={convertToH264} onChange={(e) => setConvertToH264(e.target.checked)} />
+                </label>
               </div>
             )}
 
@@ -304,19 +344,46 @@ const DetailsView = () => {
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Cancel download?</AlertDialogTitle>
+                        <AlertDialogTitle>
+                          {downloadStage === 'converting' ? 'Cancel conversion?' : 'Cancel download?'}
+                        </AlertDialogTitle>
                         <AlertDialogDescription>
-                          The download will be stopped and the partial file will be deleted. This action cannot be undone.
+                          {downloadStage === 'converting' 
+                            ? 'The video has already been downloaded. You can stop the conversion and keep the original file, or delete everything altogether.'
+                            : 'The download will be stopped and the partial file will be deleted. This action cannot be undone.'}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Keep downloading</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={handleCancelDownload}
-                          className="bg-destructive text-white hover:bg-destructive/80"
-                        >
-                          Yes, cancel
-                        </AlertDialogAction>
+                      <AlertDialogFooter className={downloadStage === 'converting' ? "sm:justify-between w-full" : ""}>
+                        {downloadStage === 'converting' ? (
+                          <>
+                            <AlertDialogCancel>Keep converting</AlertDialogCancel>
+                            <div className="flex items-center gap-2">
+                              <AlertDialogAction 
+                                variant="outline" 
+                                className="bg-transparent border border-border text-foreground hover:bg-secondary"
+                                onClick={() => handleCancelDownload(true)}
+                              >
+                                Stop, keep original
+                              </AlertDialogAction>
+                              <AlertDialogAction 
+                                onClick={() => handleCancelDownload(false)}
+                                className="bg-destructive text-white hover:bg-destructive/80"
+                              >
+                                Delete all
+                              </AlertDialogAction>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <AlertDialogCancel>Keep downloading</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleCancelDownload(false)}
+                              className="bg-destructive text-white hover:bg-destructive/80"
+                            >
+                              Yes, cancel
+                            </AlertDialogAction>
+                          </>
+                        )}
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
@@ -358,11 +425,13 @@ const DetailsView = () => {
           {isDownloading && (
             <div className="mt-auto pt-4 flex flex-col gap-2">
               {/* Stats Row */}
-              {(downloadStage === 'video' || downloadStage === 'audio') && progress > 0 && (
+              {(downloadStage === 'video' || downloadStage === 'audio' || downloadStage === 'converting') && progress > 0 && (
                 <div className="flex bg-secondary/30 border border-border/30 rounded-lg divide-x divide-border/30 overflow-hidden shadow-sm animate-in fade-in duration-200">
                   <div className="flex-1 px-2 py-1.5 flex flex-col items-center justify-center">
                     <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground mb-0.5">Speed</span>
-                    <span className="text-xs font-mono tabular-nums font-medium text-foreground">{!isPaused && speed > 0 ? `${formatBytes(speed)}/s` : '--'}</span>
+                    <span className="text-xs font-mono tabular-nums font-medium text-foreground">
+                      {!isPaused && speed > 0 ? (downloadStage === 'converting' ? `${speed.toFixed(2)}x` : `${formatBytes(speed)}/s`) : '--'}
+                    </span>
                   </div>
                   <div className="flex-1 px-2 py-1.5 flex flex-col items-center justify-center">
                     <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground mb-0.5">Elapsed</span>

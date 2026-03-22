@@ -341,9 +341,9 @@ ipcMain.handle("open-file-location", (event, filePath) => {
 
 ipcMain.handle("open-external-link", (event, url) => shell.openExternal(url));
 
-ipcMain.on("cancel-download", () => {
+ipcMain.on("cancel-download", (event, options) => {
   if (currentDownloadProcess && typeof currentDownloadProcess.cancel === 'function') {
-    currentDownloadProcess.cancel();
+    currentDownloadProcess.cancel(options?.keepOriginal);
   }
 });
 
@@ -580,7 +580,7 @@ function deletePartialDownloadFiles(filePath) {
   }
 }
 
-ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl }) => {
+ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl, convertToH264 }) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: 'yt-dlp is updating in the background, please try again in a moment.' };
   }
@@ -608,6 +608,8 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
   let isPaused = false;
   let pauseReason = null;       // null | 'user' | 'network'
   let ytDlpProcess = null;
+  let ffmpegProcess = null;
+  let keepOriginalOnCancel = false;
   let downloadStage = 'starting';
 
   // --- New Variables for Stats ---
@@ -619,19 +621,30 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
   // -------------------------------
 
   currentDownloadProcess = {
-    cancel: () => {
+    cancel: (keepOriginal = false) => {
       isCancelled = true;
+      keepOriginalOnCancel = keepOriginal;
       if (ytDlpProcess) {
-        // If paused (SIGSTOP), resume the process group first so it can receive SIGTERM
         if (isPaused && process.platform !== 'win32') {
-          try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { console.error('SIGCONT on cancel failed:', e.message); }
+          try { process.kill(-ytDlpProcess.pid, 'SIGCONT'); } catch (e) { }
         }
         if (process.platform === 'win32') {
           spawn('taskkill', ['/pid', String(ytDlpProcess.pid), '/f', '/t'], { windowsHide: true });
         } else {
-          // Kill the entire process group
           try { process.kill(-ytDlpProcess.pid, 'SIGTERM'); } catch (_) {
             ytDlpProcess.kill('SIGTERM');
+          }
+        }
+      }
+      if (ffmpegProcess) {
+        if (isPaused && process.platform !== 'win32') {
+          try { process.kill(-ffmpegProcess.pid, 'SIGCONT'); } catch (e) { }
+        }
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/pid', String(ffmpegProcess.pid), '/f', '/t'], { windowsHide: true });
+        } else {
+          try { process.kill(-ffmpegProcess.pid, 'SIGTERM'); } catch (_) {
+            ffmpegProcess.kill('SIGTERM');
           }
         }
       }
@@ -640,28 +653,26 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       pauseStartTime = 0;
     },
     pause: (reason = 'user') => {
-      if (isPaused || !ytDlpProcess || isCancelled) return;
-      // Don't allow pausing during merging/processing (local ffmpeg ops)
+      if (isPaused || (!ytDlpProcess && !ffmpegProcess) || isCancelled) return;
       if (downloadStage === 'merging' || downloadStage === 'processing') return;
       isPaused = true;
       pauseReason = reason;
       pauseStartTime = Date.now();
       if (process.platform !== 'win32') {
         try {
-          // Send SIGSTOP to the entire process group (negative PID)
-          process.kill(-ytDlpProcess.pid, 'SIGSTOP');
-          console.log(`SIGSTOP sent to process group -${ytDlpProcess.pid}`);
+          if (ytDlpProcess) process.kill(-ytDlpProcess.pid, 'SIGSTOP');
+          if (ffmpegProcess) process.kill(-ffmpegProcess.pid, 'SIGSTOP');
+          console.log(`SIGSTOP sent to process group`);
         } catch (e) {
           console.error('SIGSTOP failed:', e.message);
-          // Fallback: try sending to just the process
-          try { ytDlpProcess.kill('SIGSTOP'); } catch (e2) { console.error('SIGSTOP fallback also failed:', e2.message); }
+          try { if(ytDlpProcess) ytDlpProcess.kill('SIGSTOP'); if(ffmpegProcess) ffmpegProcess.kill('SIGSTOP'); } catch (e2) {}
         }
       }
       console.log(`Download paused (${reason})`);
       safeSend('download-progress', { paused: true, reason, stage: downloadStage });
     },
     resume: () => {
-      if (!isPaused || !ytDlpProcess || isCancelled) return;
+      if (!isPaused || (!ytDlpProcess && !ffmpegProcess) || isCancelled) return;
       isPaused = false;
       pauseReason = null;
       if (pauseStartTime) {
@@ -670,11 +681,12 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       }
       if (process.platform !== 'win32') {
         try {
-          process.kill(-ytDlpProcess.pid, 'SIGCONT');
-          console.log(`SIGCONT sent to process group -${ytDlpProcess.pid}`);
+          if (ytDlpProcess) process.kill(-ytDlpProcess.pid, 'SIGCONT');
+          if (ffmpegProcess) process.kill(-ffmpegProcess.pid, 'SIGCONT');
+          console.log(`SIGCONT sent to process group`);
         } catch (e) {
           console.error('SIGCONT failed:', e.message);
-          try { ytDlpProcess.kill('SIGCONT'); } catch (e2) { console.error('SIGCONT fallback also failed:', e2.message); }
+          try { if(ytDlpProcess) ytDlpProcess.kill('SIGCONT'); if(ffmpegProcess) ffmpegProcess.kill('SIGCONT'); } catch (e2) {}
         }
       }
       console.log('Download resumed');
@@ -864,6 +876,113 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
     });
 
     if (isCancelled) throw new Error("Download was canceled.");
+    
+    // --- OFFLINE H.264 CONVERSION ---
+    if (convertToH264 && type === 'mp4' && !isCancelled) {
+      downloadStage = 'converting';
+      speedWindow = []; // Reset moving average for new stage ETA logic
+      const tempOutput = filePath + '.tmp.mp4';
+      safeSend('download-progress', { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: 'converting' });
+      
+      await new Promise((resolve, reject) => {
+        const args = [
+          '-y',
+          '-i', filePath,
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast',
+          '-crf', '23',
+          '-c:a', 'copy',
+          tempOutput
+        ];
+        
+        console.log('Starting offline FFmpeg conversion:', ffmpegPath, args.join(' '));
+        ffmpegProcess = spawn(ffmpegPath, args, { detached: true, windowsHide: true });
+        
+        let totalDurationSec = 0;
+        
+        ffmpegProcess.stderr.on('data', (data) => {
+          const out = data.toString();
+          
+          // 1. Grab Total Duration from header (e.g. Duration: 00:03:15.54)
+          const dirMatch = out.match(/Duration:\s+(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+          if (dirMatch && !totalDurationSec) {
+            totalDurationSec = parseInt(dirMatch[1]) * 3600 + parseInt(dirMatch[2]) * 60 + parseFloat(dirMatch[3]);
+          }
+          
+          // 2. Grab Current Time from progressing encode (e.g. time=00:01:23.45)
+          const timeMatch = out.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+          if (timeMatch && totalDurationSec > 0 && !isPaused) {
+            const currentSec = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseFloat(timeMatch[3]);
+            let percentValue = (currentSec / totalDurationSec) * 100;
+            if (percentValue > 100) percentValue = 100;
+            
+            const now = Date.now();
+            
+            // Calculate speed and ETA based on sliding window of processed seconds
+            if (speedWindow.length === 0 || speedWindow[speedWindow.length - 1].t !== now) {
+              speedWindow.push({ t: now, b: currentSec });
+            }
+            while (speedWindow.length > 0 && now - speedWindow[0].t > 10000) {
+              speedWindow.shift();
+            }
+
+            if (now - lastPayloadTime > 500) {
+              lastPayloadTime = now;
+              let elapsedSec = Math.floor((now - downloadStartTime - totalPauseDuration) / 1000);
+              if (elapsedSec < 0) elapsedSec = 0;
+              
+              let currentSpeed = 0; // this represents "x multiplier" for converting
+              let currentEta = 0;   // seconds
+              
+              if (speedWindow.length > 1) {
+                const oldest = speedWindow[0];
+                const newest = speedWindow[speedWindow.length - 1];
+                const timeDiffSec = (newest.t - oldest.t) / 1000;
+                const processedDiff = newest.b - oldest.b;
+                if (timeDiffSec > 0 && processedDiff > 0) {
+                  currentSpeed = processedDiff / timeDiffSec;
+                  const remainingVideoSec = totalDurationSec - currentSec;
+                  if (remainingVideoSec > 0) {
+                    currentEta = Math.round(remainingVideoSec / currentSpeed);
+                  }
+                }
+              }
+              
+              safeSend('download-progress', { 
+                percent: percentValue, 
+                downloadedBytes: 0, 
+                totalBytes: 0, 
+                stage: 'converting',
+                speed: currentSpeed,
+                eta: currentEta,
+                elapsed: elapsedSec
+              });
+            }
+          }
+        });
+        
+        ffmpegProcess.on('close', (code) => {
+          if (isCancelled) {
+             if (keepOriginalOnCancel) {
+                 resolve(); // Resolve cleanly to return the original file
+             } else {
+                 reject(new Error("Conversion was canceled."));
+             }
+          } else if (code === 0) {
+             try {
+                fs.renameSync(tempOutput, filePath);
+                console.log('Conversion successful. Overwrote original file.');
+             } catch(e) { console.error('Rename failed after conversion', e); }
+             resolve();
+          } else {
+             reject(new Error(`ffmpeg exited with code ${code}`));
+          }
+        });
+        ffmpegProcess.on('error', (err) => reject(err));
+      });
+      
+      if (isCancelled && !keepOriginalOnCancel) throw new Error("Conversion was canceled.");
+    }
 
     console.log('Download complete! File saved at:', filePath);
 
@@ -897,7 +1016,12 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
   } finally {
     // Defensive cleanup: always wipe partial + temp files on cancel
     if (isCancelled) {
-      deletePartialDownloadFiles(filePath);
+      if (keepOriginalOnCancel) {
+        try { fs.unlinkSync(filePath + '.tmp.mp4'); } catch(e) {}
+      } else {
+        deletePartialDownloadFiles(filePath);
+        try { fs.unlinkSync(filePath + '.tmp.mp4'); } catch(e) {}
+      }
     }
     currentDownloadProcess = null;
   }
