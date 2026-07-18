@@ -5,8 +5,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import Header from './Header';
 import HistoryView from './HistoryView';
 import DetailsView from './DetailsView';
+import SettingsView from './SettingsView';
 import LoadingComponent from './LoadingComponent';
-import { AlertCircle, ArrowLeft, Download, CheckCircle2, RefreshCw, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // ─── Main app content ─────────────────────────────────────────────────────────
@@ -14,11 +15,13 @@ const AppContent = () => {
   const {
     isLoading, videoDetails, fetchError,
     goBackToHistory, cancelFetchDetails,
-    ytDlpStatus, pendingFetch,
+    ytDlpStatus, pendingFetch, showSettings
   } = useAppContext();
 
-
   const renderCardContent = () => {
+    if (showSettings) {
+      return <SettingsView />;
+    }
     if (isLoading) {
       return (
         <LoadingComponent

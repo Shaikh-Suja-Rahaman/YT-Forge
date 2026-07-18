@@ -21,6 +21,7 @@ export const AppProvider = ({ children }) => {
   const [ytDlpStatus, setYtDlpStatus] = useState(null);
   // True when user clicked "Get Video" while yt-dlp was still running
   const [pendingFetch, setPendingFetch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const fetchIdRef = useRef(0);
   const urlRef = useRef(url);
@@ -135,11 +136,13 @@ export const AppProvider = ({ children }) => {
     ytDlpStatus,
     pendingFetch,
     isYtDlpBusy,
+    showSettings,
     setUrl,
     setVideoDetails,
     setHistory,
     setIsLoading,
     setIsDownloading,
+    setShowSettings,
     handleUrlChange,
     handleFetchDetails,
     cancelFetchDetails,

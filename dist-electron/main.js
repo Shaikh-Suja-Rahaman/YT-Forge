@@ -1,5 +1,8 @@
 "use strict";
-const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, net, protocol } = require("electron");
+protocol.registerSchemesAsPrivileged([
+  { scheme: "ytforge", privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true } }
+]);
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -191,7 +194,43 @@ function startNetworkMonitoring() {
   }, 3e3);
 }
 ipcMain.handle("get-app-version", () => app.getVersion());
+const requestLog = /* @__PURE__ */ new Map();
 app.whenReady().then(() => {
+  protocol.handle("ytforge", async (request) => {
+    try {
+      const urlObj = new URL(request.url);
+      if (urlObj.hostname !== "stream") return new Response("Not Found", { status: 404 });
+      const targetUrl = urlObj.searchParams.get("url");
+      if (!targetUrl) return new Response("Missing URL", { status: 400 });
+      const target = new URL(targetUrl);
+      const isTrusted = target.hostname === "googlevideo.com" || target.hostname.endsWith(".googlevideo.com") || target.hostname === "youtube.com" || target.hostname.endsWith(".youtube.com");
+      if (!isTrusted) {
+        return new Response("Forbidden Host", { status: 403 });
+      }
+      const now = Date.now();
+      const hostLog = requestLog.get(target.hostname) || [];
+      const recentRequests = hostLog.filter((time) => now - time < 1e4);
+      if (recentRequests.length > 100) {
+        return new Response("Too Many Requests", { status: 429 });
+      }
+      recentRequests.push(now);
+      requestLog.set(target.hostname, recentRequests);
+      if (requestLog.size > 1e3) requestLog.clear();
+      const fetchHeaders = new Headers(request.headers);
+      fetchHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+      fetchHeaders.delete("Host");
+      fetchHeaders.delete("Origin");
+      fetchHeaders.delete("Referer");
+      return net.fetch(targetUrl, {
+        method: request.method,
+        headers: fetchHeaders,
+        bypassCustomProtocolHandlers: true
+      });
+    } catch (err) {
+      console.error("ytforge proxy error:", err);
+      return new Response("Internal Proxy Error", { status: 500 });
+    }
+  });
   createWindow();
   startNetworkMonitoring();
   mainWindow.webContents.once("did-finish-load", () => {
@@ -256,6 +295,49 @@ ipcMain.handle("open-file-location", (event, filePath) => {
   }
 });
 ipcMain.handle("open-external-link", (event, url) => shell.openExternal(url));
+ipcMain.handle("select-cookies-file", async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Select cookies.txt",
+    properties: ["openFile"],
+    filters: [{ name: "Text Files", extensions: ["txt"] }]
+  });
+  if (canceled || filePaths.length === 0) return { canceled: true };
+  const filePath = filePaths[0];
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    if (!content.startsWith("# Netscape HTTP Cookie File")) {
+      return { valid: false, reason: "Not a valid Netscape cookies.txt file." };
+    }
+    if (!content.includes(".youtube.com")) {
+      return { valid: false, reason: "No YouTube cookies found in this file." };
+    }
+    store.set("cookiesPath", filePath);
+    const stats = fs.statSync(filePath);
+    const ageInDays = (Date.now() - stats.mtimeMs) / (1e3 * 60 * 60 * 24);
+    const status = ageInDays > 14 ? "stale" : "ok";
+    return { valid: true, status, ageInDays, path: filePath };
+  } catch (err) {
+    return { valid: false, reason: `Error reading file: ${err.message}` };
+  }
+});
+ipcMain.handle("get-cookies-info", () => {
+  const filePath = store.get("cookiesPath");
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { status: "missing" };
+  }
+  try {
+    const stats = fs.statSync(filePath);
+    const ageInDays = (Date.now() - stats.mtimeMs) / (1e3 * 60 * 60 * 24);
+    const status = ageInDays > 14 ? "stale" : "ok";
+    return { status, ageInDays, path: filePath };
+  } catch (err) {
+    return { status: "missing" };
+  }
+});
+ipcMain.handle("remove-cookies", () => {
+  store.delete("cookiesPath");
+  return { status: "missing" };
+});
 ipcMain.on("cancel-download", (event, options) => {
   if (currentDownloadProcess && typeof currentDownloadProcess.cancel === "function") {
     currentDownloadProcess.cancel(options == null ? void 0 : options.keepOriginal);
@@ -283,12 +365,17 @@ ipcMain.on("cancel-info-fetch", () => {
 });
 async function runYtDlpJson(url, extraArgs = []) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(ytDlpBinaryPath, [
+    const args = [
       url,
       "--dump-json",
       ...BASE_ARGS,
       ...extraArgs
-    ], { env: getYtDlpEnv(), windowsHide: true });
+    ];
+    const cookiesPath = store.get("cookiesPath");
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+      args.push("--cookies", cookiesPath);
+    }
+    const proc = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), windowsHide: true });
     currentInfoFetchProcess = proc;
     let out = "";
     let err = "";
@@ -387,6 +474,7 @@ ipcMain.handle("get-video-info", async (event, url) => {
     return {
       success: true,
       videoId: info.id,
+      duration: info.duration,
       formats: uniqueFormats.length > 0 ? uniqueFormats : [{ itag: "best", quality: "Best", size: 0, sizeFormatted: "N/A" }],
       title: info.title,
       description: info.description || "",
@@ -455,14 +543,71 @@ function deletePartialDownloadFiles(filePath) {
     console.error("Failed to scan directory for temp files:", e.message);
   }
 }
-ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl, convertToH264 }) => {
+ipcMain.handle("get-stream-url", async (event, url) => {
+  return new Promise((resolve, reject) => {
+    const args = [
+      url,
+      "-g",
+      "-f",
+      "best[ext=mp4]/best",
+      ...BASE_ARGS
+    ];
+    const cookiesPath = store.get("cookiesPath");
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+      args.push("--cookies", cookiesPath);
+    }
+    const proc = spawn(ytDlpBinaryPath, args, { env: getYtDlpEnv(), windowsHide: true });
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (d) => {
+      out += d.toString();
+    });
+    proc.stderr.on("data", (d) => {
+      const text = d.toString();
+      err += text;
+      if (text.includes("Sign in to confirm your age") || text.includes("age-restricted")) {
+        safeSend("download-progress", { stage: "error", errorType: "AGE_RESTRICTED_ERROR", videoId: url });
+      }
+    });
+    proc.on("close", (code) => {
+      if (code === 0) {
+        const streamUrl = out.trim().split("\n")[0];
+        resolve({ success: true, url: streamUrl });
+      } else {
+        const isAgeRestricted = err.includes("Sign in to confirm your age") || err.includes("age-restricted");
+        resolve({
+          success: false,
+          error: err || `yt-dlp exited with code ${code}`,
+          errorType: isAgeRestricted ? "AGE_RESTRICTED_ERROR" : void 0
+        });
+      }
+    });
+    proc.on("error", (e) => {
+      resolve({ success: false, error: e.message });
+    });
+  });
+});
+function formatSecondsToFilename(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor(totalSeconds % 3600 / 60);
+  const s = Math.floor(totalSeconds % 60);
+  if (h > 0) return `${h}h${m.toString().padStart(2, "0")}m${s.toString().padStart(2, "0")}s`;
+  if (m > 0) return `${m}m${s.toString().padStart(2, "0")}s`;
+  return `${s}s`;
+}
+ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl, convertToH264, trimStart, trimEnd, preciseCut }) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: "yt-dlp is updating in the background, please try again in a moment." };
   }
   const safeTitle = title.replace(/[\\/:"*?<>|]/g, "");
+  let defaultFileName = `${safeTitle}`;
+  if (trimStart !== void 0 && trimEnd !== void 0) {
+    defaultFileName += `_${formatSecondsToFilename(trimStart)}-${formatSecondsToFilename(trimEnd)}`;
+  }
+  defaultFileName += `.${type}`;
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: `Save ${type.toUpperCase()}`,
-    defaultPath: `${safeTitle}.${type}`,
+    defaultPath: defaultFileName,
     buttonLabel: "Save",
     filters: type === "mp4" ? [{ name: "MPEG-4 Video", extensions: ["mp4"] }] : [{ name: "MP3 Audio", extensions: ["mp3"] }]
   });
@@ -600,17 +745,33 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       }
     }
     console.log("Download request - Selected format:", formatArg, "Quality itag:", quality, "Type:", type);
+    const isTrimming = trimStart !== void 0 && trimEnd !== void 0;
+    const finalFilePath2 = filePath;
+    const ext = type === "mp3" ? ".mp3" : ".mp4";
+    const needsConversion = convertToH264 && type === "mp4";
+    const ytDlpOutputPath2 = needsConversion ? finalFilePath2 + ".full.tmp" + ext : finalFilePath2;
     const args = [
       url,
       "--format",
       formatArg,
       "--output",
-      filePath,
+      ytDlpOutputPath2,
       "--ffmpeg-location",
       ffmpegPath,
       "--newline",
       ...BASE_ARGS
     ];
+    if (isTrimming) {
+      args.push("--download-sections", `*${trimStart}-${trimEnd}`);
+      args.push("--concurrent-fragments", "4");
+      if (preciseCut) {
+        args.push("--force-keyframes-at-cuts");
+      }
+    }
+    const cookiesPath = store.get("cookiesPath");
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+      args.push("--cookies", cookiesPath);
+    }
     if (type === "mp3") {
       args.push("--extract-audio", "--audio-format", "mp3", "--audio-quality", "0");
     } else {
@@ -702,10 +863,75 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       });
     });
     ytDlpProcess.stderr.on("data", (data) => {
-      console.error("yt-dlp stderr:", data.toString());
+      const text = data.toString();
+      if (text.includes("Sign in to confirm your age") || text.includes("age-restricted")) {
+        safeSend("download-progress", { stage: "error", errorType: "AGE_RESTRICTED_ERROR", videoId });
+      }
+      const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+      if (timeMatch && trimStart !== void 0 && trimEnd !== void 0 && !isPaused) {
+        const currentSec = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseFloat(timeMatch[3]);
+        const trimDuration = trimEnd - trimStart;
+        if (trimDuration > 0) {
+          let percentValue = currentSec / trimDuration * 100;
+          if (percentValue > 100) percentValue = 100;
+          if (percentValue < 0) percentValue = 0;
+          downloadStage = "video";
+          let downloadedBytes = 0;
+          const sizeMatch = text.match(/size=\s*(\d+)kB/);
+          if (sizeMatch) downloadedBytes = parseInt(sizeMatch[1]) * 1024;
+          const now = Date.now();
+          if (downloadedBytes > 0) {
+            if (speedWindow.length === 0 || speedWindow[speedWindow.length - 1].t !== now) {
+              speedWindow.push({ t: now, b: downloadedBytes });
+            }
+            while (speedWindow.length > 0 && now - speedWindow[0].t > 1e4) {
+              speedWindow.shift();
+            }
+          }
+          if (now - lastPayloadTime > 500) {
+            let elapsedSec = Math.floor((now - downloadStartTime - totalPauseDuration) / 1e3);
+            if (elapsedSec < 0) elapsedSec = 0;
+            let currentSpeed = 0;
+            if (speedWindow.length > 1) {
+              const oldest = speedWindow[0];
+              const newest = speedWindow[speedWindow.length - 1];
+              const timeDiffSec = (newest.t - oldest.t) / 1e3;
+              const bytesDiff = newest.b - oldest.b;
+              if (timeDiffSec > 0 && bytesDiff > 0) {
+                currentSpeed = bytesDiff / timeDiffSec;
+              }
+            }
+            let currentEstimate = 0;
+            if (percentValue > 0) {
+              currentEstimate = Math.round(downloadedBytes / (percentValue / 100));
+            }
+            if (global.smoothedEstimatedTotalBytes === 0 && currentEstimate > 0) {
+              global.smoothedEstimatedTotalBytes = currentEstimate;
+            } else if (currentEstimate > 0) {
+              global.smoothedEstimatedTotalBytes = Math.round(global.smoothedEstimatedTotalBytes * 0.95 + currentEstimate * 0.05);
+            }
+            let currentEta = 0;
+            if (percentValue > 0 && percentValue < 100) {
+              const totalEstimatedSec = elapsedSec / (percentValue / 100);
+              currentEta = Math.max(0, Math.round(totalEstimatedSec - elapsedSec));
+            }
+            lastPayloadTime = now;
+            safeSend("download-progress", {
+              percent: percentValue,
+              downloadedBytes,
+              totalBytes: global.smoothedEstimatedTotalBytes,
+              stage: "video",
+              speed: currentSpeed,
+              eta: currentEta,
+              elapsed: elapsedSec
+            });
+          }
+        }
+      }
     });
     await new Promise((resolve, reject) => {
       ytDlpProcess.on("close", (code) => {
+        global.smoothedEstimatedTotalBytes = 0;
         if (isCancelled) {
           reject(new Error("Download was canceled."));
         } else if (code === 0) {
@@ -717,28 +943,19 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       ytDlpProcess.on("error", (err) => reject(err));
     });
     if (isCancelled) throw new Error("Download was canceled.");
-    if (convertToH264 && type === "mp4" && !isCancelled) {
+    if (needsConversion && !isCancelled) {
       downloadStage = "converting";
       speedWindow = [];
-      const tempOutput = filePath + ".tmp.mp4";
-      safeSend("download-progress", { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: "converting" });
+      const ext2 = require("path").extname(finalFilePath2);
+      const tempOutput = finalFilePath2 + ".tmp" + (ext2 || ".mp4");
+      safeSend("download-progress", { percent: 0, downloadedBytes: 0, totalBytes: 0, stage: downloadStage });
       await new Promise((resolve, reject) => {
-        const args2 = [
-          "-y",
-          "-i",
-          filePath,
-          "-c:v",
-          "libx264",
-          "-preset",
-          "ultrafast",
-          "-crf",
-          "23",
-          "-c:a",
-          "copy",
-          tempOutput
-        ];
-        console.log("Starting offline FFmpeg conversion:", ffmpegPath, args2.join(" "));
-        ffmpegProcess = spawn(ffmpegPath, args2, { detached: true, windowsHide: true });
+        const ffmpegArgs = ["-y"];
+        ffmpegArgs.push("-i", ytDlpOutputPath2);
+        ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy");
+        ffmpegArgs.push(tempOutput);
+        console.log("Starting offline FFmpeg processing:", ffmpegPath, ffmpegArgs.join(" "));
+        ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { detached: true, windowsHide: true });
         let totalDurationSec = 0;
         ffmpegProcess.stderr.on("data", (data) => {
           const out = data.toString();
@@ -798,10 +1015,13 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
             }
           } else if (code === 0) {
             try {
-              fs.renameSync(tempOutput, filePath);
-              console.log("Conversion successful. Overwrote original file.");
+              fs.renameSync(tempOutput, finalFilePath2);
+              console.log("Processing successful. Saved final file.");
+              if (isTrimming && fs.existsSync(ytDlpOutputPath2) && ytDlpOutputPath2 !== finalFilePath2) {
+                fs.unlinkSync(ytDlpOutputPath2);
+              }
             } catch (e) {
-              console.error("Rename failed after conversion", e);
+              console.error("File rename failed after processing", e);
             }
             resolve();
           } else {
@@ -812,8 +1032,8 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       });
       if (isCancelled && !keepOriginalOnCancel) throw new Error("Conversion was canceled.");
     }
-    console.log("Download complete! File saved at:", filePath);
-    const finalSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    console.log("Download complete! File saved at:", finalFilePath2);
+    const finalSize = fs.existsSync(finalFilePath2) ? fs.statSync(finalFilePath2).size : 0;
     safeSend("download-progress", {
       percent: 100,
       downloadedBytes: finalSize,
@@ -828,25 +1048,31 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       thumbnailUrl,
       url,
       format: `${label} (${type.toUpperCase()})`,
-      path: filePath,
+      path: finalFilePath2,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     };
-    const updatedHistory = [newHistoryItem, ...history.filter((h) => h.id !== videoId || h.path !== filePath)];
+    const updatedHistory = [newHistoryItem, ...history.filter((h) => h.id !== videoId || h.path !== finalFilePath2)];
     store.set("downloadHistory", updatedHistory);
-    return { success: true, path: filePath };
+    return { success: true, path: finalFilePath2 };
   } catch (err) {
     return { success: false, error: err.message };
   } finally {
     if (isCancelled) {
       if (keepOriginalOnCancel) {
         try {
-          fs.unlinkSync(filePath + ".tmp.mp4");
+          fs.unlinkSync(finalFilePath + ".tmp.mp4");
         } catch (e) {
         }
       } else {
-        deletePartialDownloadFiles(filePath);
+        deletePartialDownloadFiles(finalFilePath);
         try {
-          fs.unlinkSync(filePath + ".tmp.mp4");
+          fs.unlinkSync(finalFilePath + ".tmp.mp4");
+        } catch (e) {
+        }
+      }
+      if (typeof ytDlpOutputPath !== "undefined") {
+        try {
+          if (fs.existsSync(ytDlpOutputPath) && ytDlpOutputPath !== finalFilePath) fs.unlinkSync(ytDlpOutputPath);
         } catch (e) {
         }
       }

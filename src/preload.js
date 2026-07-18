@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on('ytdlp-update-status', (_event, value) => callback(value));
   },
   getYtDlpStatus: () => ipcRenderer.invoke('get-ytdlp-status'),
+  // Cookie Management APIs
+  selectCookiesFile: () => ipcRenderer.invoke('select-cookies-file'),
+  getCookiesInfo: () => ipcRenderer.invoke('get-cookies-info'),
+  removeCookies: () => ipcRenderer.invoke('remove-cookies'),
+  getStreamUrl: (url) => ipcRenderer.invoke('get-stream-url', url),
   // App auto-update APIs
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 });

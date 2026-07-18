@@ -3,10 +3,10 @@ import { useAppContext } from '../contexts/AppContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Loader2, Search, Github } from 'lucide-react';
+import { Loader2, Search, Github, Settings } from 'lucide-react';
 
 const Header = () => {
-  const { url, handleUrlChange, handleFetchDetails, isLoading, isDownloading } = useAppContext();
+  const { url, handleUrlChange, handleFetchDetails, isLoading, isDownloading, showSettings, setShowSettings } = useAppContext();
 
   return (
     <header className="flex items-center gap-3">
@@ -46,6 +46,21 @@ const Header = () => {
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
           Support this project ❤️
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-10 w-10 shrink-0 transition-colors ${showSettings ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-white'}`}
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Settings
         </TooltipContent>
       </Tooltip>
     </header>

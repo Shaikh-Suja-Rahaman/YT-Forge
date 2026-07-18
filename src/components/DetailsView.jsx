@@ -35,13 +35,15 @@ import {
   Play,
   WifiOff,
   Check,
+  Scissors
 } from 'lucide-react';
+import TrimmerModal from './TrimmerModal';
 
 const formatTime = (totalSeconds) => {
   if (!totalSeconds || isNaN(totalSeconds) || totalSeconds < 0) return '00:00';
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
+  const s = Math.floor(totalSeconds % 60);
   if (h > 0) {
     return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
@@ -55,7 +57,8 @@ const DetailsView = () => {
     goBackToHistory,
     isDownloading,
     setIsDownloading,
-    refreshHistory
+    refreshHistory,
+    setShowSettings
   } = useAppContext();
 
   const [selectedQuality, setSelectedQuality] = useState(
@@ -77,6 +80,14 @@ const DetailsView = () => {
   // Conversion state
   const [convertToH264, setConvertToH264] = useState(false);
 
+  // Trimmer state
+  const duration = details.duration || 0;
+  const [trimRange, setTrimRange] = useState([0, duration]);
+
+  const [isTrimModalOpen, setIsTrimModalOpen] = useState(false);
+  
+  const isTrimmed = trimRange[0] > 0 || trimRange[1] < duration;
+
   const isVP9 = useMemo(() => {
     if (selectedType === 'mp3') return false;
     const format = details.formats.find(f => String(f.itag) === selectedQuality);
@@ -90,13 +101,20 @@ const DetailsView = () => {
     const format = details.formats.find(f => String(f.itag) === selectedQuality);
     if (!format || !format.sizeFormatted) return "N/A";
 
-    if (convertToH264 && isVP9) {
-      if (format.size > 0) {
-        return `~${formatBytes(format.size * 1.9)}`;
-      }
+    let multiplier = 1;
+    if (convertToH264 && isVP9) multiplier *= 1.9;
+    
+    // Scale by trim ratio
+    const trimDuration = trimRange[1] - trimRange[0];
+    if (trimDuration > 0 && trimDuration < duration) {
+      multiplier *= (trimDuration / duration);
+    }
+
+    if (format.size > 0 && multiplier !== 1) {
+      return `~${formatBytes(format.size * multiplier)}`;
     }
     return format.sizeFormatted;
-  }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted, convertToH264, isVP9]);
+  }, [selectedQuality, selectedType, details.formats, details.audioSizeFormatted, convertToH264, isVP9, trimRange, duration]);
 
   const stageLabels = {
     starting: 'Preparing download...',
@@ -105,28 +123,47 @@ const DetailsView = () => {
     merging: 'Merging video & audio...',
     processing: 'Processing audio...',
     converting: 'Converting to H.264...',
+    cutting: 'Trimming Video...',
     done: 'Complete!',
   };
 
   useEffect(() => {
     const listener = (data) => {
+      const { percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting', speed = 0, eta = 0, elapsed = 0, errorType } = data;
+
       // Handle pause/resume status events
       if (data.paused !== undefined) {
         setIsPaused(data.paused);
         setPauseReason(data.reason || null);
-        if (data.stage) setDownloadStage(data.stage);
+        if (stage) setDownloadStage(stage);
         return;
       }
 
-      const { percent = 0, downloadedBytes = 0, totalBytes = 0, stage = 'starting', speed = 0, eta = 0, elapsed = 0 } = data;
+      if (stage === 'error') {
+        if (errorType === 'AGE_RESTRICTED_ERROR') {
+          setDownloadStage('error');
+          setProgressText('Age-restricted. Add cookies in Settings.');
+          setIsPaused(true);
+        } else {
+          setDownloadStage('error');
+          setProgressText('Download failed');
+          setIsPaused(true);
+        }
+        return;
+      }
+
       setProgress(percent);
       setDownloadStage(stage);
       setSpeed(speed);
       setEta(eta);
       setElapsed(elapsed);
 
-      if (stage === 'merging' || stage === 'processing') {
-        setProgressText(stageLabels[stage]);
+      if (stage === 'merging' || stage === 'processing' || stage === 'converting' || stage === 'cutting') {
+        if (percent > 0) {
+          setProgressText(`${stageLabels[stage] || 'Processing...'} ${percent.toFixed(1)}%`);
+        } else {
+          setProgressText(stageLabels[stage] || 'Processing...');
+        }
       } else if (totalBytes > 0) {
         setProgressText(`${percent.toFixed(1)}% — ${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`);
       } else if (percent > 0) {
@@ -160,6 +197,9 @@ const DetailsView = () => {
       qualityLabel,
       type: selectedType,
       convertToH264: convertToH264 && isVP9,
+      trimStart: isTrimmed ? trimRange[0] : undefined,
+      trimEnd: isTrimmed ? trimRange[1] : undefined,
+
     };
 
     const result = await window.electronAPI.downloadVideo(options);
@@ -444,14 +484,21 @@ const DetailsView = () => {
                 </div>
               )}
 
-              <div className={`rounded-lg border p-3 ${isPaused
+              <div className={`rounded-lg border p-3 ${
+                downloadStage === 'error'
+                ? 'border-destructive/30 bg-destructive/10'
+                : isPaused
                 ? 'border-amber-500/20 bg-amber-500/5'
                 : 'border-border/30 bg-secondary/30'
                 }`}>
                 <div className="flex justify-between items-center gap-3 mb-2 min-w-0">
-                  <span className={`text-xs font-medium whitespace-nowrap ${isPaused ? 'text-amber-400' : 'text-foreground'
+                  <span className={`text-xs font-medium whitespace-nowrap ${
+                    downloadStage === 'error' ? 'text-destructive'
+                    : isPaused ? 'text-amber-400' : 'text-foreground'
                     }`}>
-                    {isPaused
+                    {downloadStage === 'error'
+                      ? 'Error'
+                      : isPaused
                       ? pauseReason === 'network'
                         ? 'Waiting for connection...'
                         : 'Paused'
@@ -461,21 +508,50 @@ const DetailsView = () => {
                     {progressText}
                   </span>
                 </div>
-                <Progress
-                  value={progress}
-                  indeterminate={progress <= 0 && !isPaused}
-                  paused={isPaused}
-                />
+                {downloadStage === 'error' && progressText.includes('cookies') ? (
+                  <Button variant="outline" size="sm" onClick={() => setShowSettings(true)} className="w-full mt-2 h-8 text-xs border-destructive/50 text-destructive hover:bg-destructive/10">
+                    Open Settings
+                  </Button>
+                ) : (
+                  <Progress
+                    value={progress}
+                    indeterminate={progress <= 0 && !isPaused && downloadStage !== 'error'}
+                    paused={isPaused}
+                  />
+                )}
               </div>
             </div>
+          )}
+          
+          {/* Trim Video Button */}
+          {!isDownloading && !downloadedFilePath && (
+            <Button
+              variant="outline"
+              className={`w-full mt-2 h-9 border-border/60 gap-2 ${isTrimmed ? 'bg-secondary/50 border-border text-foreground hover:bg-secondary' : 'hover:bg-secondary'}`}
+              onClick={() => setIsTrimModalOpen(true)}
+            >
+              <Scissors className="h-4 w-4" />
+              {isTrimmed ? `Edit Trim (${formatTime(trimRange[0])} - ${formatTime(trimRange[1])})` : 'Trim Video'}
+            </Button>
           )}
         </div>
 
         {/* Right Column — Title & Description */}
         <div className="flex flex-col min-w-0 min-h-0">
-          <h3 className="text-base font-semibold leading-snug mb-3 truncate" title={details.title}>
-            {details.title}
-          </h3>
+          <div className="mb-3">
+            <h3 className="text-base font-semibold leading-snug truncate" title={details.title}>
+              {details.title}
+            </h3>
+            {isTrimmed && (
+              <div className="flex items-center gap-1.5 mt-2 inline-flex bg-secondary/50 text-muted-foreground border border-border/40 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase">
+                <Scissors className="w-3 h-3" />
+                <span>Trimmed</span>
+                <button onClick={() => { setTrimRange([0, duration]); }} className="ml-1 hover:text-foreground transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
           <div className="flex-1 overflow-y-auto rounded-lg bg-secondary/20 border border-border/20 min-h-0">
             <div className="p-4">
               <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
@@ -485,6 +561,17 @@ const DetailsView = () => {
           </div>
         </div>
       </div>
+
+      <TrimmerModal
+        isOpen={isTrimModalOpen}
+        onClose={() => setIsTrimModalOpen(false)}
+        onSave={(data) => {
+          setTrimRange(data.trimRange);
+        }}
+        details={details}
+        url={url}
+        initialTrimRange={trimRange}
+      />
     </div>
   );
 };
