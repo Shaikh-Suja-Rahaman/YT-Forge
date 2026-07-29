@@ -13,10 +13,20 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Trash2, FolderOpen, X, Info, ExternalLink, CheckCircle2, ArrowUpCircle } from 'lucide-react';
+import { Trash2, FolderOpen, X, Settings, ExternalLink, CheckCircle2, ArrowUpCircle, Youtube, Loader2, LogOut } from 'lucide-react';
+
+const GoogleIcon = (props) => (
+  <svg viewBox="0 0 24 24" {...props}>
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+  </svg>
+);
 
 const HistoryView = () => {
-  const { history, setHistory } = useAppContext();
+  const { history, setHistory, isAuthenticated, loginYoutube, logoutYoutube } = useAppContext();
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [latestVersion, setLatestVersion] = useState('');
   const [hasNewVersion, setHasNewVersion] = useState(false);
@@ -43,6 +53,12 @@ const HistoryView = () => {
     return () => { mounted = false; };
   }, []);
 
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    await loginYoutube();
+    setIsLoggingIn(false);
+  };
+
   const handleClearHistory = async () => {
     await window.electronAPI.clearHistory();
     setHistory([]);
@@ -64,7 +80,7 @@ const HistoryView = () => {
 
         <div className="flex items-center gap-2">
 
-          {/* ── Info / About button ── */}
+          {/* ── Settings button ── */}
           <AlertDialog>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -74,11 +90,11 @@ const HistoryView = () => {
                     size="sm"
                     className="relative text-muted-foreground hover:text-white gap-1.5 h-7 text-xs"
                   >
-                    <Info className="h-3 w-3" />
-                    Info
+                    <Settings className="h-3 w-3" />
+                    Settings
                     {hasNewVersion && (
                       <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                        <span className=" absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
                       </span>
                     )}
@@ -86,59 +102,126 @@ const HistoryView = () => {
                 </AlertDialogTrigger>
               </TooltipTrigger>
 
-              {
-                hasNewVersion && (
-                  <TooltipContent side="bottom" className="text-xs">
-                    Newer version available
-                  </TooltipContent>
-                )
-              }
-
-
+              {hasNewVersion && (
+                <TooltipContent side="bottom" className="text-xs">
+                  Newer version available
+                </TooltipContent>
+              )}
             </Tooltip>
 
-            <AlertDialogContent className="sm:max-w-sm bg-background border-border/40 shadow-xl p-0 overflow-hidden outline-none rounded-xl">
-              {/* Top accent bar */}
-              <div className={`h-[2px] w-full `} />
-
-              <div className="px-6 pt-5 pb-4">
-                <AlertDialogHeader className="space-y-4">
-                  {/* App name + version */}
+            <AlertDialogContent className="sm:max-w-md bg-background border-border/40 shadow-xl p-0 overflow-hidden outline-none rounded-xl">
+              <div className="px-6 py-5 max-h-[80vh] overflow-y-auto">
+                <AlertDialogHeader className="space-y-6">
+                  {/* Settings Header */}
                   <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <AlertDialogTitle className="text-base font-semibold tracking-tight">
-                        YT-Forge
-                      </AlertDialogTitle>
-
-                    </div>
-                    <span className="text-sm font-mono font-bold px-2.5 py-1 rounded-lg bg-secondary/70 text-foreground border border-border/50">
-                      v{appVersion || '—'}
+                    <AlertDialogTitle className="text-xl font-bold tracking-tight">
+                      Settings
+                    </AlertDialogTitle>
+                    <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-md bg-secondary/50 text-muted-foreground border border-border/40">
+                      YT-Forge v{appVersion || '—'}
                     </span>
                   </div>
 
-                  {/* Status card */}
-                  <div className={`flex items-start gap-3 rounded-lg px-4 py-3 ${hasNewVersion ? 'bg-primary/[0.07] border border-primary/20' : 'bg-secondary/30 border border-border/40'}`}>
-                    {hasNewVersion ? (
-                      <>
-                        <ArrowUpCircle className="w-[18px] h-[18px] text-primary mt-0.5 shrink-0" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-semibold text-primary">Update available</span>
-                          <AlertDialogDescription className="text-xs text-muted-foreground m-0 p-0">
-                            Version <span className="font-semibold text-foreground/80">v{latestVersion}</span> is available on GitHub.
-                          </AlertDialogDescription>
+                  {/* Updates Section */}
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-medium text-foreground/80">App Updates</h3>
+                    <div className={`flex items-center gap-3 rounded-xl px-4 py-3.5 transition-colors ${hasNewVersion ? 'bg-primary/10 border border-primary/20' : 'bg-secondary/40 border border-border/40'}`}>
+                      {hasNewVersion ? (
+                        <>
+                          <ArrowUpCircle className="w-5 h-5 text-primary shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-semibold text-primary">Update available</span>
+                            <AlertDialogDescription className="text-xs text-muted-foreground m-0 p-0">
+                              Version <span className="font-semibold text-foreground">v{latestVersion}</span> is available on GitHub.
+                            </AlertDialogDescription>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500/80 shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-medium text-foreground/90">You're up to date</span>
+                            <AlertDialogDescription className="text-xs text-muted-foreground m-0 p-0">
+                              {versionChecked ? 'Running the latest release.' : 'Checking for updates…'}
+                            </AlertDialogDescription>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* YouTube Auth Section */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-foreground/80 flex items-center gap-2">
+                        YouTube Authentication
+                      </h3>
+                      {isAuthenticated ? (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary/40 border border-border/50">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-xs font-medium text-foreground/80">Signed In</span>
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-[18px] h-[18px] text-emerald-400 mt-0.5 shrink-0" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-semibold text-foreground">You're up to date</span>
-                          <AlertDialogDescription className="text-xs text-muted-foreground m-0 p-0">
-                            {versionChecked ? 'Running the latest release.' : 'Checking for updates…'}
-                          </AlertDialogDescription>
+                      ) : (
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Not Signed In
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 space-y-4">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Sign in to download <strong className="text-foreground/80 font-medium">age-restricted videos</strong>. 
+                        
+                        Normal downloads work without signing in.
+                      </p>
+                      
+                      {isAuthenticated ? (
+                        <div className="flex flex-col gap-2 pt-1">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" className="w-full h-9">
+                                <LogOut className="w-4 h-4 mr-2" />
+                                Sign Out
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Sign out of YouTube?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  You won't be able to download age-restricted videos until you sign in again.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={logoutYoutube} className="bg-destructive text-white hover:bg-destructive/90">
+                                  Sign Out
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <p className="text-[11px] text-muted-foreground/70 text-center">
+                            Note: Your session may expire automatically after ~30 days.
+                          </p>
                         </div>
-                      </>
-                    )}
+                      ) : (
+                        <div className="pt-1">
+                          <Button 
+                            variant="default" 
+                            size="sm" 
+                            onClick={handleLogin} 
+                            disabled={isLoggingIn} 
+                            className="w-full h-9 bg-white text-black hover:bg-white/90 shadow-sm transition-all"
+                          >
+                            {isLoggingIn ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <GoogleIcon className="w-4 h-4 mr-2" />
+                            )}
+                            <span className="font-medium text-sm">Sign in with Google</span>
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </AlertDialogHeader>
               </div>
