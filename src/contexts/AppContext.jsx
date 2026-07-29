@@ -17,10 +17,12 @@ export const AppProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
-  // yt-dlp update lifecycle: null | 'checking' | 'downloading' | 'updated' | 'up-to-date' | 'error'
   const [ytDlpStatus, setYtDlpStatus] = useState(null);
   // True when user clicked "Get Video" while yt-dlp was still running
   const [pendingFetch, setPendingFetch] = useState(false);
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAgeRestricted, setIsAgeRestricted] = useState(false);
 
   const fetchIdRef = useRef(0);
   const urlRef = useRef(url);
@@ -39,6 +41,21 @@ export const AppProvider = ({ children }) => {
     window.electronAPI.getHistory().then(setHistory);
   }, []);
 
+  // Check initial youtube auth state
+  useEffect(() => {
+    window.electronAPI.checkYoutubeAuth().then(setIsAuthenticated);
+  }, []);
+
+  const loginYoutube = async () => {
+    const success = await window.electronAPI.loginYoutube();
+    if (success) setIsAuthenticated(true);
+    return success;
+  };
+
+  const logoutYoutube = async () => {
+    await window.electronAPI.logoutYoutube();
+    setIsAuthenticated(false);
+  };
 
 
   // The actual fetch logic — uses urlRef so it's always fresh
@@ -47,6 +64,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUrl) return;
     setIsLoading(true);
     setFetchError(null);
+    setIsAgeRestricted(false);
     const currentFetchId = ++fetchIdRef.current;
     try {
       const result = await window.electronAPI.getVideoInfo(currentUrl);
@@ -56,6 +74,7 @@ export const AppProvider = ({ children }) => {
       } else {
         console.error(`Error: ${result.error}`);
         setVideoDetails(null);
+        if (result.isAgeRestricted) setIsAgeRestricted(true);
         setFetchError(result.error);
       }
     } catch (error) {
@@ -102,6 +121,7 @@ export const AppProvider = ({ children }) => {
     setUrl("");
     setVideoDetails(null);
     setFetchError(null);
+    setIsAgeRestricted(false);
     setPendingFetch(false);
     setIsLoading(false);
   };
@@ -117,6 +137,7 @@ export const AppProvider = ({ children }) => {
     if (!newUrl.trim()) {
       setVideoDetails(null);
       setFetchError(null);
+      setIsAgeRestricted(false);
     }
   };
 
@@ -135,6 +156,8 @@ export const AppProvider = ({ children }) => {
     ytDlpStatus,
     pendingFetch,
     isYtDlpBusy,
+    isAuthenticated,
+    isAgeRestricted,
     setUrl,
     setVideoDetails,
     setHistory,
@@ -145,6 +168,8 @@ export const AppProvider = ({ children }) => {
     cancelFetchDetails,
     goBackToHistory,
     refreshHistory,
+    loginYoutube,
+    logoutYoutube,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

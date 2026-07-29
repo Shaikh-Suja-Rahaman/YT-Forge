@@ -1,5 +1,5 @@
 "use strict";
-const { app, BrowserWindow, ipcMain, dialog, shell, net } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, net, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -281,11 +281,92 @@ ipcMain.on("cancel-info-fetch", () => {
     currentInfoFetchProcess = null;
   }
 });
+const COOKIES_PATH = path.join(app.getPath("userData"), "youtube_cookies.txt");
+async function extractYouTubeCookies() {
+  const cookies = await session.defaultSession.cookies.get({ domain: ".youtube.com" });
+  let cookieText = "# Netscape HTTP Cookie File\n";
+  cookies.forEach((cookie) => {
+    const domain = cookie.domain;
+    const includeSubDomain = domain.startsWith(".") ? "TRUE" : "FALSE";
+    const cPath = cookie.path;
+    const secure = cookie.secure ? "TRUE" : "FALSE";
+    const expiry = cookie.expirationDate ? Math.floor(cookie.expirationDate) : 0;
+    cookieText += `${domain}	${includeSubDomain}	${cPath}	${secure}	${expiry}	${cookie.name}	${cookie.value}
+`;
+  });
+  fs.writeFileSync(COOKIES_PATH, cookieText, "utf8");
+}
+ipcMain.handle("login-youtube", async () => {
+  return new Promise((resolve) => {
+    const loginWin = new BrowserWindow({
+      width: 500,
+      height: 600,
+      title: "Sign in to YouTube",
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      },
+      autoHideMenuBar: true
+    });
+    loginWin.loadURL("https://accounts.google.com/ServiceLogin?service=youtube");
+    let resolved = false;
+    loginWin.webContents.on("did-navigate", async (event, url) => {
+      if (url.includes("youtube.com") && !url.includes("accounts.google.com") && !resolved) {
+        resolved = true;
+        await extractYouTubeCookies();
+        loginWin.close();
+        resolve(true);
+      }
+    });
+    loginWin.on("closed", () => {
+      if (!resolved) {
+        resolved = true;
+        resolve(false);
+      }
+    });
+  });
+});
+ipcMain.handle("logout-youtube", async () => {
+  const cookies = await session.defaultSession.cookies.get({ domain: ".youtube.com" });
+  for (const cookie of cookies) {
+    let url = (cookie.secure ? "https://" : "http://") + cookie.domain.replace(/^\./, "") + cookie.path;
+    await session.defaultSession.cookies.remove(url, cookie.name);
+  }
+  const googleCookies = await session.defaultSession.cookies.get({ domain: ".google.com" });
+  for (const cookie of googleCookies) {
+    let url = (cookie.secure ? "https://" : "http://") + cookie.domain.replace(/^\./, "") + cookie.path;
+    await session.defaultSession.cookies.remove(url, cookie.name);
+  }
+  if (fs.existsSync(COOKIES_PATH)) {
+    fs.unlinkSync(COOKIES_PATH);
+  }
+  return true;
+});
+ipcMain.handle("check-youtube-auth", async () => {
+  const cookies = await session.defaultSession.cookies.get({ domain: ".youtube.com", name: "LOGIN_INFO" });
+  if (cookies.length > 0) {
+    await extractYouTubeCookies();
+    return true;
+  }
+  const sidCookies = await session.defaultSession.cookies.get({ domain: ".youtube.com", name: "SID" });
+  if (sidCookies.length > 0) {
+    await extractYouTubeCookies();
+    return true;
+  }
+  return false;
+});
+function getAuthArgs() {
+  if (fs.existsSync(COOKIES_PATH)) {
+    return ["--cookies", COOKIES_PATH];
+  }
+  return [];
+}
 async function runYtDlpJson(url, extraArgs = []) {
   return new Promise((resolve, reject) => {
     const proc = spawn(ytDlpBinaryPath, [
       url,
       "--dump-json",
+      ...getAuthArgs(),
       ...BASE_ARGS,
       ...extraArgs
     ], { env: getYtDlpEnv(), windowsHide: true });
@@ -300,8 +381,16 @@ async function runYtDlpJson(url, extraArgs = []) {
     });
     proc.on("close", (code) => {
       currentInfoFetchProcess = null;
-      if (code === 0) resolve(JSON.parse(out));
-      else reject(new Error(err || `yt-dlp exited with code ${code}`));
+      if (code === 0) {
+        resolve(JSON.parse(out));
+      } else {
+        const errorMsg = err || `yt-dlp exited with code ${code}`;
+        if (errorMsg.includes("Sign in to confirm your age")) {
+          reject(new Error("AGE_RESTRICTED"));
+        } else {
+          reject(new Error(errorMsg));
+        }
+      }
     });
     proc.on("error", (e) => {
       currentInfoFetchProcess = null;
@@ -394,6 +483,9 @@ ipcMain.handle("get-video-info", async (event, url) => {
       audioSizeFormatted: formatBytes(audioSize)
     };
   } catch (error) {
+    if (error.message === "AGE_RESTRICTED") {
+      return { success: false, isAgeRestricted: true, error: "The content is age-restricted. Please sign in via Google." };
+    }
     console.error("Error fetching video info:", error);
     return { success: false, error: error.message };
   }
@@ -609,6 +701,7 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       "--ffmpeg-location",
       ffmpegPath,
       "--newline",
+      ...getAuthArgs(),
       ...BASE_ARGS
     ];
     if (type === "mp3") {
