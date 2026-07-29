@@ -5,8 +5,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import Header from './Header';
 import HistoryView from './HistoryView';
 import DetailsView from './DetailsView';
+import PlaylistView from './PlaylistView';
 import LoadingComponent from './LoadingComponent';
-import { AlertCircle, ArrowLeft, Download, CheckCircle2, RefreshCw, X, Youtube, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Download, CheckCircle2, RefreshCw, X, Youtube, Loader2, ListVideo, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const GoogleIcon = (props) => (
@@ -21,8 +22,8 @@ const GoogleIcon = (props) => (
 // ─── Main app content ─────────────────────────────────────────────────────────
 const AppContent = () => {
   const {
-    isLoading, videoDetails, fetchError,
-    goBackToHistory, cancelFetchDetails,
+    isLoading, videoDetails, playlistDetails, isPlaylistMode, hybridPromptUrl, fetchError,
+    goBackToHistory, cancelFetchDetails, handleHybridChoice,
     ytDlpStatus, pendingFetch,
     isAgeRestricted, loginYoutube,
   } = useAppContext();
@@ -47,6 +48,51 @@ const AppContent = () => {
         />
       );
     }
+    if (hybridPromptUrl) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-5">
+          <div className="flex flex-col items-center gap-4 max-w-md text-center bg-secondary/30 p-8 rounded-2xl border border-border/40">
+            <div className="space-y-2 mb-4">
+              <p className="text-xl font-semibold text-foreground">Multiple Items Found</p>
+              <p className="text-sm text-muted-foreground leading-relaxed px-4">
+                This link points to a specific video that is also part of a playlist. What would you like to download?
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 w-full">
+              <Button 
+                variant="outline" 
+                className="h-24 flex flex-col items-center justify-center gap-2 border-border/60 hover:bg-secondary/60 hover:border-border transition-all"
+                onClick={() => handleHybridChoice('video')}
+              >
+                <Film className="h-6 w-6 text-primary" />
+                <span className="font-medium">Just this Video</span>
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="h-24 flex flex-col items-center justify-center gap-2 border-border/60 hover:bg-secondary/60 hover:border-border transition-all"
+                onClick={() => handleHybridChoice('playlist')}
+              >
+                <ListVideo className="h-6 w-6 text-primary" />
+                <span className="font-medium">Whole Playlist</span>
+              </Button>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={goBackToHistory}
+            className="gap-1.5 text-muted-foreground hover:text-foreground text-xs mt-2"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Cancel
+          </Button>
+        </div>
+      );
+    }
+    
+    if (isPlaylistMode && playlistDetails) return <PlaylistView />;
     if (videoDetails) return <DetailsView />;
     if (fetchError) {
       if (isAgeRestricted) {

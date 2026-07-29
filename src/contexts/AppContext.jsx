@@ -24,6 +24,10 @@ export const AppProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAgeRestricted, setIsAgeRestricted] = useState(false);
 
+  const [playlistDetails, setPlaylistDetails] = useState(null);
+  const [isPlaylistMode, setIsPlaylistMode] = useState(false);
+  const [hybridPromptUrl, setHybridPromptUrl] = useState(null);
+
   const fetchIdRef = useRef(0);
   const urlRef = useRef(url);
   urlRef.current = url;
@@ -65,6 +69,7 @@ export const AppProvider = ({ children }) => {
     setIsLoading(true);
     setFetchError(null);
     setIsAgeRestricted(false);
+    setIsPlaylistMode(false);
     const currentFetchId = ++fetchIdRef.current;
     try {
       const result = await window.electronAPI.getVideoInfo(currentUrl);
@@ -114,12 +119,72 @@ export const AppProvider = ({ children }) => {
       setFetchError(null);
       return;
     }
+    
+    // Analyze URL to determine video vs playlist
+    try {
+      const u = new URL(urlRef.current);
+      const hasList = u.searchParams.has('list');
+      const hasVideo = u.searchParams.has('v') || urlRef.current.includes('youtu.be/') || urlRef.current.includes('/shorts/');
+      
+      if (hasList && hasVideo) {
+        setHybridPromptUrl(urlRef.current);
+        return;
+      } else if (hasList && !hasVideo) {
+        runPlaylistFetch();
+        return;
+      }
+    } catch(e) {}
+    
     runFetch();
   };
+
+  const handleHybridChoice = (choice) => {
+    setHybridPromptUrl(null);
+    if (choice === 'playlist') {
+      runPlaylistFetch();
+    } else {
+      runFetch();
+    }
+  };
+
+  const runPlaylistFetch = useCallback(async () => {
+    const currentUrl = urlRef.current;
+    if (!currentUrl) return;
+    setIsLoading(true);
+    setFetchError(null);
+    setIsAgeRestricted(false);
+    setIsPlaylistMode(true);
+    const currentFetchId = ++fetchIdRef.current;
+    
+    try {
+      const result = await window.electronAPI.getPlaylistInfo(currentUrl);
+      if (currentFetchId !== fetchIdRef.current) return;
+      if (result.success) {
+        setPlaylistDetails(result);
+      } else {
+        console.error(`Error: ${result.error}`);
+        setPlaylistDetails(null);
+        if (result.isAgeRestricted) setIsAgeRestricted(true);
+        setFetchError(result.error);
+      }
+    } catch (error) {
+      if (currentFetchId !== fetchIdRef.current) return;
+      console.error("Failed to fetch playlist details:", error);
+      setPlaylistDetails(null);
+      setFetchError(error.message || 'Something went wrong');
+    } finally {
+      if (currentFetchId === fetchIdRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
 
   const goBackToHistory = () => {
     setUrl("");
     setVideoDetails(null);
+    setPlaylistDetails(null);
+    setIsPlaylistMode(false);
+    setHybridPromptUrl(null);
     setFetchError(null);
     setIsAgeRestricted(false);
     setPendingFetch(false);
@@ -136,6 +201,9 @@ export const AppProvider = ({ children }) => {
     setUrl(newUrl);
     if (!newUrl.trim()) {
       setVideoDetails(null);
+      setPlaylistDetails(null);
+      setIsPlaylistMode(false);
+      setHybridPromptUrl(null);
       setFetchError(null);
       setIsAgeRestricted(false);
     }
@@ -149,6 +217,9 @@ export const AppProvider = ({ children }) => {
   const value = {
     url,
     videoDetails,
+    playlistDetails,
+    isPlaylistMode,
+    hybridPromptUrl,
     history,
     isLoading,
     isDownloading,
@@ -160,11 +231,13 @@ export const AppProvider = ({ children }) => {
     isAgeRestricted,
     setUrl,
     setVideoDetails,
+    setPlaylistDetails,
     setHistory,
     setIsLoading,
     setIsDownloading,
     handleUrlChange,
     handleFetchDetails,
+    handleHybridChoice,
     cancelFetchDetails,
     goBackToHistory,
     refreshHistory,

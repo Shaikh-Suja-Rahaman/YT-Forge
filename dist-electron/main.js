@@ -239,6 +239,11 @@ const sizeToBytes = (value, unit) => {
 };
 ipcMain.handle("get-history", () => store.get("downloadHistory", []));
 ipcMain.handle("clear-history", () => store.set("downloadHistory", []));
+ipcMain.handle("add-history-item", (event, item) => {
+  const history = store.get("downloadHistory", []);
+  const updated = [item, ...history];
+  store.set("downloadHistory", updated);
+});
 ipcMain.handle("delete-history-item", (event, timestamp) => {
   const history = store.get("downloadHistory", []);
   const updated = history.filter((item) => item.timestamp !== timestamp);
@@ -365,7 +370,7 @@ async function runYtDlpJson(url, extraArgs = []) {
   return new Promise((resolve, reject) => {
     const proc = spawn(ytDlpBinaryPath, [
       url,
-      "--dump-json",
+      "-J",
       ...getAuthArgs(),
       ...BASE_ARGS,
       ...extraArgs
@@ -490,6 +495,56 @@ ipcMain.handle("get-video-info", async (event, url) => {
     return { success: false, error: error.message };
   }
 });
+ipcMain.handle("get-playlist-info", async (event, url) => {
+  if (isUpdatingYtDlp) {
+    return { success: false, error: "yt-dlp is updating in the background, please try again in a moment." };
+  }
+  try {
+    let cleanUrl = url;
+    try {
+      const u = new URL(url);
+      const listId = u.searchParams.get("list");
+      if (listId) {
+        cleanUrl = `https://www.youtube.com/playlist?list=${listId}`;
+      }
+    } catch (e) {
+    }
+    console.log("Fetching playlist info for:", cleanUrl);
+    const info = await runYtDlpJson(cleanUrl, ["--flat-playlist", "--yes-playlist"]);
+    const entries = info.entries || [];
+    const videos = entries.filter((v) => v.id && v.title && v.title !== "[Private video]" && v.title !== "[Deleted video]").map((v) => ({
+      id: v.id,
+      url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+      title: v.title,
+      duration: v.duration || 0,
+      uploader: v.uploader || v.channel || info.uploader || info.channel || "Unknown",
+      thumbnail: v.thumbnails && v.thumbnails.length > 0 ? v.thumbnails[v.thumbnails.length - 1].url : `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`
+    }));
+    return {
+      success: true,
+      title: info.title || "Unknown Playlist",
+      uploader: info.uploader || info.channel || "Unknown",
+      description: info.description || "",
+      videos
+    };
+  } catch (error) {
+    console.error("Error fetching playlist info:", error);
+    return {
+      success: false,
+      error: error.message,
+      isAgeRestricted: error.message === "AGE_RESTRICTED"
+    };
+  }
+});
+ipcMain.handle("choose-directory", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory", "createDirectory"]
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});
 ipcMain.handle("download-thumbnail", async (event, { url, title }) => {
   const safeTitle = title.replace(/[\\/:"*?<>|]/g, "");
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
@@ -547,26 +602,52 @@ function deletePartialDownloadFiles(filePath) {
     console.error("Failed to scan directory for temp files:", e.message);
   }
 }
-ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl, convertToH264 }) => {
+ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityLabel, type, title, thumbnailUrl, convertToH264, targetDir, allowDuplicates, skipHistory }) => {
   if (isUpdatingYtDlp) {
     return { success: false, error: "yt-dlp is updating in the background, please try again in a moment." };
   }
   const safeTitle = title.replace(/[\\/:"*?<>|]/g, "");
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: `Save ${type.toUpperCase()}`,
-    defaultPath: `${safeTitle}.${type}`,
-    buttonLabel: "Save",
-    filters: type === "mp4" ? [{ name: "MPEG-4 Video", extensions: ["mp4"] }] : [{ name: "MP3 Audio", extensions: ["mp3"] }]
-  });
-  if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
-  if (fs.existsSync(filePath)) {
-    try {
-      fs.unlinkSync(filePath);
-      console.log("Deleted existing file to force fresh download");
-    } catch (err) {
-      console.error("Failed to delete existing file:", err);
+  const ext = type === "mp4" ? "mp4" : "mp3";
+  let filePath;
+  let canceled = false;
+  if (targetDir) {
+    filePath = path.join(targetDir, `${safeTitle}.${ext}`);
+    if (fs.existsSync(filePath)) {
+      if (allowDuplicates) {
+        let counter = 1;
+        while (fs.existsSync(filePath)) {
+          filePath = path.join(targetDir, `${safeTitle} (${counter}).${ext}`);
+          counter++;
+        }
+      } else {
+        try {
+          fs.unlinkSync(filePath);
+          console.log("Deleted existing file to force fresh download");
+        } catch (err) {
+          console.error("Failed to delete existing file:", err);
+        }
+      }
+    }
+  } else {
+    const dialogResult = await dialog.showSaveDialog(mainWindow, {
+      title: `Save ${type.toUpperCase()}`,
+      defaultPath: `${safeTitle}.${ext}`,
+      buttonLabel: "Save",
+      filters: type === "mp4" ? [{ name: "MPEG-4 Video", extensions: ["mp4"] }] : [{ name: "MP3 Audio", extensions: ["mp3"] }]
+    });
+    canceled = dialogResult.canceled;
+    filePath = dialogResult.filePath;
+    if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log("Deleted existing file to force fresh download");
+      } catch (err) {
+        console.error("Failed to delete existing file:", err);
+      }
     }
   }
+  if (canceled || !filePath) return { success: false, error: "Save dialog was canceled." };
   let isCancelled = false;
   let isPaused = false;
   let pauseReason = null;
@@ -913,19 +994,21 @@ ipcMain.handle("download-video", async (event, { videoId, url, quality, qualityL
       totalBytes: finalSize,
       stage: "done"
     });
-    const history = store.get("downloadHistory", []);
-    const label = type === "mp3" ? "AUDIO" : qualityLabel;
-    const newHistoryItem = {
-      id: videoId,
-      title,
-      thumbnailUrl,
-      url,
-      format: `${label} (${type.toUpperCase()})`,
-      path: filePath,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    const updatedHistory = [newHistoryItem, ...history.filter((h) => h.id !== videoId || h.path !== filePath)];
-    store.set("downloadHistory", updatedHistory);
+    if (!skipHistory) {
+      const history = store.get("downloadHistory", []);
+      const label = type === "mp3" ? "AUDIO" : qualityLabel;
+      const newHistoryItem = {
+        id: videoId,
+        title,
+        thumbnailUrl,
+        url,
+        format: `${label} (${type.toUpperCase()})`,
+        path: filePath,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const updatedHistory = [newHistoryItem, ...history.filter((h) => h.id !== videoId || h.path !== filePath)];
+      store.set("downloadHistory", updatedHistory);
+    }
     return { success: true, path: filePath };
   } catch (err) {
     return { success: false, error: err.message };
